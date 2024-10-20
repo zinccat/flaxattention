@@ -58,10 +58,13 @@ poetry install
 
 ## Benchmark
 
-For the checkboard mod_score examples of flexattention, using RTX 3090, with parameters `batch_size=8, num_heads=8, seq_len_q=2048, seq_len_kv=2048, feature_size=64`, running 100 iterations:
+For the checkboard mod_score examples of flexattention, using RTX 3090, with parameters `batch_size=8, num_heads=8, seq_len_q=2048, seq_len_kv=2048, feature_size=64`, under float32, running 100 iterations:
 
 - FlexAttention: 0.82s
 - FlaxAttention (This repo): 0.90s
 - FlaxAttention (This repo, without pallas softmax): 1.04s
 
 We can see that the performance is about 10% slower than the original implementation. There are still some optimizations to be done.
+
+## Issues
+Attention under float16 is way too slow due to unoptimized matmul.
