@@ -3,10 +3,17 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
-from .common import _score_mod_signature, _mask_mod_signature, _ModificationType, _get_mod_type, _vmap_for_bhqkv
+from .common import (
+    _score_mod_signature,
+    _mask_mod_signature,
+    _ModificationType,
+    _get_mod_type,
+    _vmap_for_bhqkv,
+)
 
 _DEFAULT_SPARSE_BLOCK_SIZE = 128
 _LARGE_SPARSE_BLOCK_SIZE = 1 << 30
+
 
 def noop_mask(
     batch: Array,
@@ -16,6 +23,7 @@ def noop_mask(
 ) -> Array:
     """Returns a noop mask_mod"""
     return jnp.ones((), dtype=jnp.bool)
+
 
 def _ordered_to_dense(num_blocks_in_row: Array, col_indices: Array):
     num_rows = col_indices.shape[-2]
@@ -43,6 +51,7 @@ def _ordered_to_dense(num_blocks_in_row: Array, col_indices: Array):
     out = create_dense_batched(num_blocks_in_row, col_indices)
     return out
 
+
 def _dense_to_ordered(dense_mask) -> Tuple:
     dense_mask = dense_mask.astype(dtype=jnp.int32)
     num_blocks_in_row = dense_mask.sum(axis=-1)
@@ -52,9 +61,11 @@ def _dense_to_ordered(dense_mask) -> Tuple:
         col_indices.astype(jnp.int32),
     )
 
+
 def _transpose_ordered(num_blocks_in_row: Array, col_indices: Array):
     dense = _ordered_to_dense(num_blocks_in_row, col_indices)
     return _dense_to_ordered(jnp.matrix_transpose(dense))
+
 
 class BlockMask:
     kv_num_blocks: Array
@@ -117,7 +128,7 @@ class BlockMask:
     ):
         if kv_indices.ndim < 2:
             raise RuntimeError("BlockMask must have at least 2 dimensions")
-        
+
         assert (full_kv_num_blocks is None) == (
             full_kv_indices is None
         ), "full_kv_num_blocks and full_kv_indices must be both provided or omitted"
@@ -149,7 +160,7 @@ class BlockMask:
             BLOCK_SIZE=BLOCK_SIZE,
             mask_mod=mask_mod,
         )
-    
+
     def as_tuple(self, flatten: bool = True):
         """
         Returns a tuple of the attributes of the BlockMask.
@@ -173,7 +184,8 @@ class BlockMask:
             *block_size,
             self.mask_mod,
         )
-    
+
+
 def _create_empty_block_mask(query: Array, key: Array) -> BlockMask:
     r"""Default block mask for flex attention.
     If users don't specify any block sparse mask info, we create this
@@ -185,6 +197,7 @@ def _create_empty_block_mask(query: Array, key: Array) -> BlockMask:
         kv_indices=jnp.zeros([1, 1, 1, 1], dtype=jnp.int32),
         BLOCK_SIZE=_LARGE_SPARSE_BLOCK_SIZE,
     )
+
 
 def _create_sparse_block_from_block_mask(
     block_mask: Tuple[Array, Optional[Array]],
@@ -208,6 +221,7 @@ def _create_sparse_block_from_block_mask(
         BLOCK_SIZE=(KV_BLOCK_SIZE, Q_BLOCK_SIZE),
         mask_mod=mask_mod,
     )
+
 
 def create_mask(
     mod_fn: Union[_score_mod_signature, _mask_mod_signature],
@@ -233,10 +247,10 @@ def create_mask(
         B = 1
     if H is None:
         H = 1
-    b = jnp.arange(0, B)
-    h = jnp.arange(0, H)
-    m = jnp.arange(0, Q_LEN)
-    n = jnp.arange(0, KV_LEN)
+    b = jnp.arange(B)
+    h = jnp.arange(H)
+    m = jnp.arange(Q_LEN)
+    n = jnp.arange(KV_LEN)
 
     mod_type = _get_mod_type(mod_fn)
     if mod_type == _ModificationType.SCORE_MOD:
@@ -244,7 +258,9 @@ def create_mask(
         score_mod = mod_fn
         score_mod = _vmap_for_bhqkv(score_mod, prefix=(0,))  # first input is score
         out = score_mod(jnp.zeros((B, H, Q_LEN, KV_LEN)), b, h, m, n)
-        mask = jnp.where(jnp.isneginf(out), False, True) # mask is True where the score is not -inf, False ones are masked
+        mask = jnp.where(
+            jnp.isneginf(out), False, True
+        )  # mask is True where the score is not -inf, False ones are masked
         return mask
     elif mod_type == _ModificationType.MASK_MOD:
         mask_mod = mod_fn
@@ -253,15 +269,18 @@ def create_mask(
         return mask
     else:
         raise ValueError("Unknown modification function type")
-    
+
+
 def _broadcast_to_dim(x, dim):
     while x.ndim < dim:
         x = x[None, :]
     return x
 
+
 def _round_up_to_multiple(x, multiple):
     return (x + multiple - 1) // multiple * multiple
-    
+
+
 def _convert_mask_to_block_mask(
     mask: Array,
     KV_BLOCK_SIZE=_DEFAULT_SPARSE_BLOCK_SIZE,
@@ -298,6 +317,7 @@ def _convert_mask_to_block_mask(
         partial_blocks = partial_blocks.astype(dtype=jnp.int8)
         return partial_blocks, None
 
+
 def _create_block_mask_inner(
     mask_mod: Callable,
     B: int,
@@ -316,6 +336,7 @@ def _create_block_mask_inner(
     )
     return partial_block_mask, full_block_mask
 
+
 def create_block_mask(
     mask_mod: _mask_mod_signature,
     B: Optional[int],
@@ -326,7 +347,7 @@ def create_block_mask(
     _compile=False,
 ) -> BlockMask:
     inner_func = _create_block_mask_inner
-    
+
     if B is None:
         B = 1
     if H is None:
@@ -343,10 +364,12 @@ def create_block_mask(
         Q_LEN = _round_up_to_multiple(Q_LEN, Q_BLOCK_SIZE)
     KV_LEN = _round_up_to_multiple(KV_LEN, KV_BLOCK_SIZE)
     if _compile:
-        inner_func = jax.jit(inner_func)
+        inner_func = jax.jit(
+            inner_func, static_argnums=(0, 1, 2, 3, 4, 5, 6)
+        )  # this is too weird, there might be a better way to do this
     partial_block_mask, full_block_mask = inner_func(
         mask_mod, B, H, Q_LEN, KV_LEN, KV_BLOCK_SIZE, Q_BLOCK_SIZE
-        )
+    )
     block_mask = _create_sparse_block_from_block_mask(
         (partial_block_mask, full_block_mask), mask_mod
     )
