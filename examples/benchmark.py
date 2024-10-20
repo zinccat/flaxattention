@@ -22,7 +22,6 @@ def mha(
     score_mod: Callable = None,
     mask_mod: Callable = None,
 ) -> Array:
-    whole = jnp.arange(query.shape[1]).reshape(1, query.shape[1])
     sm_scale = 1 / math.sqrt(query.shape[-1])
     block_q = 64
     block_k = 64
@@ -30,7 +29,6 @@ def mha(
         q=query,
         k=key,
         v=value,
-        whole=whole,
         segment_ids=None,
         sm_scale=sm_scale,
         block_q=block_q,

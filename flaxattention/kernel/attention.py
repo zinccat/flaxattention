@@ -35,7 +35,6 @@ def mha_forward_kernel(
     q_ref,
     k_ref,
     v_ref,  # Input arrays
-    whole_ref,  # whole indices
     segment_ids_ref: jax.Array | None,  # segment_id arrays
     o_ref: Any,  # Output
     *residual_refs: Any,  # Residual outputs
@@ -82,15 +81,15 @@ def mha_forward_kernel(
 
         if score_mod is not None or mask_mod is not None:
             # Apply the custom score modification function here
-            q_indices = pl.load(whole_ref, (curr_q_slice))
-            k_indices = pl.load(whole_ref, (curr_k_slice))
+            span_q = start_q * block_q + jnp.arange(block_q)
+            span_k = start_k * block_k + jnp.arange(block_k)
             if mask_mod is not None:
-                mask = mask_mod(None, None, q_indices, k_indices)
+                mask = mask_mod(None, None, span_q, span_k)
                 qk = jnp.where(mask, qk, DEFAULT_MASK_VALUE)
             if score_mod is not None:
                 qk = jnp.where(
                     qk != DEFAULT_MASK_VALUE,
-                    score_mod(qk, None, None, q_indices, k_indices),
+                    score_mod(qk, None, None, span_q, span_k),
                     DEFAULT_MASK_VALUE,
                 )
         # Avoids Triton crash.
@@ -183,7 +182,6 @@ def mha(
     q,
     k,
     v,
-    whole,
     segment_ids: jnp.ndarray | None,
     sm_scale: float = 1.0,
     causal: bool = False,
@@ -229,11 +227,6 @@ def mha(
     ]
     in_specs.append(
         None  # type: ignore[arg-type]
-        if whole is None
-        else pl.BlockSpec((None, seq_len), lambda _, j, k: (j, 0))
-    )
-    in_specs.append(
-        None  # type: ignore[arg-type]
         if segment_ids is None
         else pl.BlockSpec((None, seq_len), lambda _, j, k: (j, 0))
     )
@@ -252,4 +245,4 @@ def mha(
         debug=debug,
         interpret=interpret,
         name="mha_forward",
-    )(q, k, v, whole, segment_ids)
+    )(q, k, v, segment_ids)
