@@ -15,8 +15,8 @@ if __name__ == "__main__":
     def checkerboard(
         score: Array, batch: Array, head: Array, q_idx: Array, k_idx: Array
     ) -> Array:
-        score = jnp.where((k_idx - q_idx) % 2 == 0, score * 0.5, score)
-        score = jnp.where((k_idx - q_idx) % 2 == 1, score * 2.0, score)
+        score = jnp.where(jnp.abs(k_idx - q_idx) % 2 == 0, score * 0.5, score)
+        score = jnp.where(jnp.abs(k_idx - q_idx) % 2 == 1, score * 2.0, score)
         return score
 
     # Prepare inputs
