@@ -49,6 +49,8 @@ def mha_forward_kernel(
 ):
     seq_len = k_ref.shape[0]
     start_q = pl.program_id(0)
+    start_b = pl.program_id(1)
+    start_h = pl.program_id(2)
 
     # o is the buffer where we accumulate the output on sram.
     # m_i and l_i (see FlashAttention paper) are updated during the k,v loop.
@@ -84,12 +86,12 @@ def mha_forward_kernel(
             span_q = start_q * block_q + jnp.arange(block_q)
             span_k = start_k * block_k + jnp.arange(block_k)
             if mask_mod is not None:
-                mask = mask_mod(None, None, span_q, span_k)
+                mask = mask_mod(start_b, start_h, span_q, span_k)
                 qk = jnp.where(mask, qk, DEFAULT_MASK_VALUE)
             if score_mod is not None:
                 qk = jnp.where(
                     qk != DEFAULT_MASK_VALUE,
-                    score_mod(qk, None, None, span_q, span_k),
+                    score_mod(qk, start_b, start_h, span_q, span_k),
                     DEFAULT_MASK_VALUE,
                 )
         # Avoids Triton crash.
@@ -203,7 +205,7 @@ def mha(
     # Heuristics.
     grid_ = grid
     if grid_ is None:
-        grid_ = (pl.cdiv(seq_len, block_q), batch_size, num_heads)
+        grid_ = (pl.cdiv(seq_len, block_q), batch_size, num_heads) # seq, batch, head
 
     num_warps_ = num_warps
     if num_warps_ is None:
