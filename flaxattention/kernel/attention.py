@@ -26,7 +26,7 @@ from jax.experimental.pallas import triton as plgpu
 import jax.numpy as jnp
 import numpy as np
 
-from flaxattention.core.common import _score_mod_signature
+from flaxattention.core.common import _score_mod_signature, _mask_mod_signature
 
 DEFAULT_MASK_VALUE = -0.7 * float(np.finfo(np.dtype("float32")).max)
 
@@ -46,6 +46,7 @@ def mha_forward_kernel(
     block_d: int,
     block_k: int,
     score_mod: _score_mod_signature | None = None,
+    mask_mod: _mask_mod_signature | None = None,
 ):
     seq_len = k_ref.shape[0]
     start_q = pl.program_id(0)
@@ -79,11 +80,19 @@ def mha_forward_kernel(
         if sm_scale != 1.0:
             qk *= sm_scale  # [block_q, block_k]
 
-        if score_mod is not None:
+        if score_mod is not None or mask_mod is not None:
             # Apply the custom score modification function here
             q_indices = pl.load(whole_ref, (curr_q_slice))
             k_indices = pl.load(whole_ref, (curr_k_slice))
-            qk = score_mod(qk, None, None, q_indices, k_indices)
+            if mask_mod is not None:
+                mask = mask_mod(None, None, q_indices, k_indices)
+                qk = jnp.where(mask, qk, DEFAULT_MASK_VALUE)
+            if score_mod is not None:
+                qk = jnp.where(
+                    qk != DEFAULT_MASK_VALUE,
+                    score_mod(qk, None, None, q_indices, k_indices),
+                    DEFAULT_MASK_VALUE,
+                )
         # Avoids Triton crash.
         # if num_heads > 2:
         #   qk = qk.astype(q_ref.dtype)
@@ -167,6 +176,7 @@ def segment_mask(
         "interpret",
         "debug",
         "score_mod",
+        "mask_mod",
     ],
 )
 def mha(
@@ -185,10 +195,8 @@ def mha(
     grid: tuple[int, ...] | None = None,
     interpret: bool = False,
     debug: bool = False,
-    score_mod: Callable[
-        [jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray
-    ]
-    | None = None,
+    score_mod: _score_mod_signature | None = None,
+    mask_mod: _mask_mod_signature | None = None,
 ):
     del backward_pass_impl
     batch_size, seq_len, num_heads, head_dim = q.shape
@@ -211,6 +219,7 @@ def mha(
         block_d=head_dim,
         causal=causal,
         score_mod=score_mod,
+        mask_mod=mask_mod,
     )
 
     in_specs = [
