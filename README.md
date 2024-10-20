@@ -58,13 +58,15 @@ poetry install
 
 ## Benchmark
 
-For the checkboard mod_score examples of flexattention, using RTX 3090, with parameters `batch_size=8, num_heads=8, seq_len_q=2048, seq_len_kv=2048, feature_size=64`, under float32, running 100 iterations:
+For the checkboard mod_score examples of flexattention, using RTX 3090, with parameters `batch_size=8, num_heads=8, seq_len_q=2048, seq_len_kv=2048, feature_size=64`, running 100 iterations:
 
-- FlexAttention: 0.76s
-- FlaxAttention (This repo): 0.87s
-- FlaxAttention (without matmul flag): 0.90s
-- FlaxAttention (without pallas softmax): 1.04s
+TF32:
+- FlexAttention: 0.27s
+- FlaxAttention (This repo): 0.33s
+- FlaxAttention (Without Pallas Flash Attention): 0.87s
 
-We can see that the performance is about 15% slower than the original implementation. There are still some optimizations to be done.
+Float16:
+- FlexAttention: 0.11s
+- FlaxAttention (This repo): 0.13s
 
-Another caveat is that Jax default to tf32 for matmul, yet Torch's default is float32, and Torch's tf32 is much faster (0.28s). We can see that the performance is about 3 times slower than the original implementation.
+We can see that the performance is about 20% slower than the original implementation. There are still some optimizations to be done.
