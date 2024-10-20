@@ -1,5 +1,11 @@
 from flaxattention.core.attention import math_attention, flax_attention
-from flaxattention.core.blockmask import BlockMask, create_block_mask, and_masks, or_masks
+from flaxattention.core.blockmask import (
+    BlockMask,
+    create_block_mask,
+    and_masks,
+    or_masks,
+)
+from flaxattention.core.common import _mask_mod_signature, _score_mod_signature
 
 __all__ = [
     "math_attention",
@@ -8,4 +14,6 @@ __all__ = [
     "create_block_mask",
     "and_masks",
     "or_masks",
+    "_mask_mod_signature",
+    "_score_mod_signature",
 ]

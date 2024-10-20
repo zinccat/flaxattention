@@ -2,17 +2,11 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
-from flaxattention import flax_attention, create_block_mask, and_masks, or_masks
+from flaxattention import flax_attention, create_block_mask, and_masks
+from flaxattention.masks import causal_mask, generate_sliding_window
+from flaxattention.mods import generate_alibi_bias
 
 if __name__ == "__main__":
-
-    def causal_mask(b_idx, h_idx, q_idx, k_idx):
-        # return 1 if q_idx >= k_idx else 0
-        # all values with 0 are masked
-        return q_idx >= k_idx
-    
-    def sliding_mask(b_idx, h_idx, q_idx, k_idx):
-        return jnp.abs(q_idx - k_idx) <= 10
 
     def checkerboard(
         score: Array, batch: Array, head: Array, q_idx: Array, k_idx: Array
@@ -41,7 +35,7 @@ if __name__ == "__main__":
 
     flax_attention = jax.jit(flax_attention, static_argnums=(3, 4))
 
-    merged_mask = and_masks(causal_mask, sliding_mask)
+    merged_mask = and_masks(causal_mask, generate_sliding_window(10))
 
     block_mask = create_block_mask(
         merged_mask, batch_size, num_heads, seq_len_q, seq_len_kv
@@ -53,7 +47,7 @@ if __name__ == "__main__":
         query,
         key,
         value,
-        score_mod=checkerboard,
+        score_mod=generate_alibi_bias(num_heads),
         block_mask=block_mask,
     )
 

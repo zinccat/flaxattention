@@ -186,7 +186,7 @@ class BlockMask:
             *block_size,
             self.mask_mod,
         )
-    
+
     @property
     def shape(self):
         """Returns the shape of the mask."""
@@ -194,7 +194,7 @@ class BlockMask:
         q_length = self.kv_indices.shape[-2] * self.BLOCK_SIZE[0]
         kv_length = self.kv_indices.shape[-1] * self.BLOCK_SIZE[1]
         return tuple(batch_dims + [q_length, kv_length])
-    
+
     def numel(self):
         """Returns the number of elements (not accounting for sparsity) in the mask."""
         shape = self.shape
@@ -203,7 +203,7 @@ class BlockMask:
             return functools.reduce(operator.mul, xs, 1)
 
         return _prod(shape)
-    
+
     def sparsity(self) -> float:
         """Computes the percentage of blocks that are sparse (i.e. not computed)"""
         total_size = self.numel()
@@ -214,7 +214,7 @@ class BlockMask:
         computed_size = computed_blocks.item() * self.BLOCK_SIZE[0] * self.BLOCK_SIZE[1]
         dense_ratio = computed_size / total_size
         return 100 * (1 - dense_ratio)
-    
+
     def __repr__(self):
         def shape_or_none(x: Optional[Array]):
             return x.shape if x is not None else None
