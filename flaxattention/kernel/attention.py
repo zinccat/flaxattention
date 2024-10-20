@@ -85,12 +85,14 @@ def mha_forward_kernel(
             # Apply the custom score modification function here
             span_q = start_q * block_q + jnp.arange(block_q)
             span_k = start_k * block_k + jnp.arange(block_k)
+            # boolean mask for the current qk slice
             if mask_mod is not None:
                 mask = mask_mod(start_b, start_h, span_q, span_k)
-                qk = jnp.where(mask, qk, DEFAULT_MASK_VALUE)
+            else:
+                mask = jnp.ones_like(qk, dtype=jnp.bool_)
             if score_mod is not None:
                 qk = jnp.where(
-                    qk != DEFAULT_MASK_VALUE,
+                    mask,
                     score_mod(qk, start_b, start_h, span_q, span_k),
                     DEFAULT_MASK_VALUE,
                 )
