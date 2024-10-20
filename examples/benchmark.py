@@ -4,6 +4,12 @@ from jax import Array
 
 from flaxattention import flax_attention
 
+import os
+os.environ['XLA_FLAGS'] = (
+    # '--xla_gpu_enable_triton_softmax_fusion=true'
+    '--xla_gpu_triton_gemm_any=True'
+)
+
 if __name__ == "__main__":
 
     def checkerboard(
@@ -22,13 +28,13 @@ if __name__ == "__main__":
 
     # Random tensors for query, key, and value
     key = jax.random.normal(
-        jax.random.PRNGKey(0), (batch_size, num_heads, seq_len_kv, feature_size)
+        jax.random.PRNGKey(0), (batch_size, num_heads, seq_len_kv, feature_size)#, dtype=jnp.float16
     )
     query = jax.random.normal(
-        jax.random.PRNGKey(1), (batch_size, num_heads, seq_len_q, feature_size)
+        jax.random.PRNGKey(1), (batch_size, num_heads, seq_len_q, feature_size)#, dtype=jnp.float16
     )
     value = jax.random.normal(
-        jax.random.PRNGKey(2), (batch_size, num_heads, seq_len_kv, feature_size)
+        jax.random.PRNGKey(2), (batch_size, num_heads, seq_len_kv, feature_size)#, dtype=jnp.float16
     )
 
     flax_attention = jax.jit(flax_attention, static_argnums=(3, 4))
@@ -56,3 +62,17 @@ if __name__ == "__main__":
     print("Time taken:", end - start)
 
     print("Output shape:", output.shape)
+
+    # try flax attention
+    from flax.nnx import dot_product_attention
+    # dot_product_attention = jax.jit(dot_product_attention, static_argnums=(10, 11))
+    start = timer()
+    for _ in range(100):
+        output = dot_product_attention(
+            query,
+            key,
+            value,
+        )
+    output.block_until_ready()
+    end = timer()
+    print("Time taken:", end - start)
