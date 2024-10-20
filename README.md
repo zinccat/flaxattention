@@ -67,5 +67,7 @@ For the checkboard mod_score examples of flexattention, using RTX 3090, with par
 
 We can see that the performance is about 5% slower than the original implementation. There are still some optimizations to be done.
 
+Another caveat is that Jax default to tf32 for matmul, yet Torch's default is float32, and Torch's tf32 is much faster (0.28s). We can see that the performance is about 3 times slower than the original implementation.
+
 ## Issues
 Attention under float16 is way too slow due to unoptimized matmul.
