@@ -1,4 +1,6 @@
 from typing import Callable, Tuple, Optional, Union
+import functools
+import operator
 import jax
 import jax.numpy as jnp
 from jax import Array
@@ -184,6 +186,55 @@ class BlockMask:
             *block_size,
             self.mask_mod,
         )
+    
+    @property
+    def shape(self):
+        """Returns the shape of the mask."""
+        *batch_dims, q_length, _ = self.kv_indices.shape
+        q_length = self.kv_indices.shape[-2] * self.BLOCK_SIZE[0]
+        kv_length = self.kv_indices.shape[-1] * self.BLOCK_SIZE[1]
+        return tuple(batch_dims + [q_length, kv_length])
+    
+    def numel(self):
+        """Returns the number of elements (not accounting for sparsity) in the mask."""
+        shape = self.shape
+
+        def _prod(xs):
+            return functools.reduce(operator.mul, xs, 1)
+
+        return _prod(shape)
+    
+    def sparsity(self) -> float:
+        """Computes the percentage of blocks that are sparse (i.e. not computed)"""
+        total_size = self.numel()
+        computed_blocks = self.kv_num_blocks.sum()
+        if self.full_kv_num_blocks is not None:
+            computed_blocks += self.full_kv_num_blocks.sum()
+
+        computed_size = computed_blocks.item() * self.BLOCK_SIZE[0] * self.BLOCK_SIZE[1]
+        dense_ratio = computed_size / total_size
+        return 100 * (1 - dense_ratio)
+    
+    def __repr__(self):
+        def shape_or_none(x: Optional[Array]):
+            return x.shape if x is not None else None
+
+        return (
+            f"BlockMask(\n"
+            f"    kv_num_blocks={self.kv_num_blocks.shape},\n"
+            f"    kv_indices={self.kv_indices.shape},\n"
+            f"    full_kv_num_blocks={shape_or_none(self.full_kv_num_blocks )},\n"
+            f"    full_kv_indices={shape_or_none(self.full_kv_indices)},\n"
+            f"    q_num_blocks={shape_or_none(self.q_num_blocks)},\n"
+            f"    q_indices={shape_or_none(self.q_indices)},\n"
+            f"    full_q_num_blocks={shape_or_none(self.full_q_num_blocks)},\n"
+            f"    full_q_indices={shape_or_none(self.full_q_indices)},\n"
+            f"    BLOCK_SIZE={self.BLOCK_SIZE},\n"
+            f"    shape={self.shape},\n"
+            f"    sparsity={self.sparsity():.2f}%,\n"
+            f"    mask_mod={self.mask_mod.__name__ if hasattr(self.mask_mod, '__name__') else self.mask_mod}\n"
+            f")"
+        )
 
 
 def _create_empty_block_mask(query: Array, key: Array) -> BlockMask:
@@ -316,6 +367,34 @@ def _convert_mask_to_block_mask(
         partial_blocks = mask_block_sum > 0
         partial_blocks = partial_blocks.astype(dtype=jnp.int8)
         return partial_blocks, None
+
+
+def or_masks(*mask_mods: _mask_mod_signature) -> _mask_mod_signature:
+    """Returns a mask_mod that's the union of provided mask_mods"""
+    if not all(callable(arg) for arg in mask_mods):
+        raise RuntimeError(f"All inputs should be callable mask_mods: {mask_mods}")
+
+    def or_mask(b, h, q_idx, kv_idx):
+        result = jnp.zeros((), dtype=jnp.bool)
+        for mask in mask_mods:
+            result = result | mask(b, h, q_idx, kv_idx)
+        return result
+
+    return or_mask
+
+
+def and_masks(*mask_mods: _mask_mod_signature) -> _mask_mod_signature:
+    """Returns a mask_mod that's the intersection of provided mask_mods"""
+    if not all(callable(arg) for arg in mask_mods):
+        raise RuntimeError(f"All inputs should be callable mask_mods: {mask_mods}")
+
+    def and_mask(b, h, q_idx, kv_idx):
+        result = jnp.ones((), dtype=jnp.bool)
+        for mask in mask_mods:
+            result = result & mask(b, h, q_idx, kv_idx)
+        return result
+
+    return and_mask
 
 
 def _create_block_mask_inner(
