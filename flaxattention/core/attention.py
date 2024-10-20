@@ -1,5 +1,6 @@
 import math
 import jax
+from jax.experimental.pallas.ops.gpu.softmax import softmax as pl_softmax
 import jax.numpy as jnp
 from typing import Any, Callable, Dict, Tuple, Optional, Union
 from jax import Array
@@ -72,6 +73,7 @@ def math_attention(
     kernel_options: Dict[str, Any],
     score_mod_other_buffers: Tuple = (),
     mask_mod_other_buffers: Tuple = (),
+    use_pallas: bool = True,
 ) -> Tuple[Array, Array]:
     # Broadcast query & key along head dimension for GQA
     G = query.shape[1] // key.shape[1]
@@ -95,7 +97,10 @@ def math_attention(
     masked_rows = jnp.all(post_mod_scores == -jnp.inf, axis=-1)
     logsumexp = jnp.where(masked_rows, -jnp.inf, logsumexp)
 
-    post_mod_scores = jax.nn.softmax(post_mod_scores, axis=-1)
+    if use_pallas:
+        post_mod_scores = pl_softmax(post_mod_scores, axis=-1)
+    else:
+        post_mod_scores = jax.nn.softmax(post_mod_scores, axis=-1)
 
     output = jnp.matmul(post_mod_scores.astype(query.dtype), value)
     return output, logsumexp / jnp.log(2)
@@ -160,7 +165,6 @@ def _validate_embed_dim(query: Array, key: Array, value: Array):
             f"NYI: Currently value embedding dimension must be less than or equal to query embedding dimension. "
             f"Got Ev={value.shape[-1]} and E={query.shape[-1]}."
         )
-
 
 def flax_attention(
     query: Array,
