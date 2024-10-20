@@ -53,7 +53,7 @@ def _math_attention_inner(
     scores = (scores * scale).astype(working_precision)
 
     mask = mask_mod(b_idx, h_idx, m_idx, n_idx, *mask_mod_other_buffers)
-    mask = mask.astype(jnp.bool_)
+    mask = mask.astype(jnp.bool)
     post_mod_scores = jnp.where(
         mask,
         score_mod(scores, b_idx, h_idx, m_idx, n_idx, *score_mod_other_buffers),
