@@ -11,6 +11,9 @@ homepage = "https://github.com/zinccat/flaxattention"
 [tool.poetry.dependencies]
 python = "^3.10"
 
+[tool.mypy]
+disable_error_code = "import-untyped"
+
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
