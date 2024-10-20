@@ -10,6 +10,7 @@ homepage = "https://github.com/zinccat/flaxattention"
 
 [tool.poetry.dependencies]
 python = "^3.10"
+jax = "^0.4.34"
 
 [tool.mypy]
 disable_error_code = "import-untyped"

@@ -60,7 +60,7 @@ if __name__ == "__main__":
             query,
             key,
             value,
-            score_mod=checkerboard,
+            score_mod=generate_alibi_bias(num_heads),
             block_mask=block_mask,
         )
     output[0].block_until_ready()
