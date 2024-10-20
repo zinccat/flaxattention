@@ -14,7 +14,7 @@ os.environ['XLA_FLAGS'] = (
     '--xla_gpu_triton_gemm_any=True'
 )
 
-@partial(jax.jit, static_argnums=(3, 4))
+@partial(jax.jit, static_argnames=("score_mod", "mask_mod"))
 def mha(
     query: Array,
     key: Array,
@@ -23,8 +23,8 @@ def mha(
     mask_mod: Callable = None,
 ) -> Array:
     sm_scale = 1 / math.sqrt(query.shape[-1])
-    block_q = 64
-    block_k = 64
+    block_q = 128
+    block_k = 32
     return mha_pallas(
         q=query,
         k=key,
@@ -71,7 +71,7 @@ if __name__ == "__main__":
         jax.random.PRNGKey(2), (batch_size, num_heads, seq_len_kv, feature_size), #dtype=jnp.float16
     )
 
-    flax_attention = jax.jit(flax_attention, static_argnums=(3, 4))
+    flax_attention = jax.jit(flax_attention, static_argnames=("score_mod", "block_mask"))
 
     block_mask = create_block_mask(causal, batch_size, num_heads, seq_len_q, seq_len_kv)
 
@@ -102,6 +102,13 @@ if __name__ == "__main__":
 
     # try flax attention
     from flax.nnx import dot_product_attention
+
+    # warm up
+    output = dot_product_attention(
+        query,
+        key,
+        value,
+    )
     start = timer()
     for _ in range(100):
         output = dot_product_attention(
@@ -129,6 +136,15 @@ if __name__ == "__main__":
     for dims in dimensions:
         in_axes = prefix + dims
         causal = jax.vmap(causal, in_axes=in_axes, out_axes=0)
+
+    # warm up
+    output = mha(
+        query,
+        key,
+        value,
+        score_mod=checkerboard,
+        # mask_mod=causal,
+    )
 
     start = timer()
     for _ in range(100):
