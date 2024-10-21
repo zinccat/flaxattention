@@ -2,7 +2,7 @@
 
 Porting [FlexAttention](https://github.com/pytorch-labs/attention-gym) to pure JAX.
 
-Example usage (For faster performance using Flash Attention, check examples/benchmark.py):
+Example usage (**For faster performance using Flash Attention, check examples/benchmark.py**):
 
 ```python
 import jax
