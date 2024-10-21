@@ -1,4 +1,4 @@
-from flaxattention.core.attention import math_attention, flax_attention
+from flaxattention.core.attention import math_attention, flax_attention, flax_attention_pallas
 from flaxattention.core.blockmask import (
     BlockMask,
     create_block_mask,
@@ -10,6 +10,7 @@ from flaxattention.core.common import _mask_mod_signature, _score_mod_signature
 __all__ = [
     "math_attention",
     "flax_attention",
+    "flax_attention_pallas",
     "BlockMask",
     "create_block_mask",
     "and_masks",

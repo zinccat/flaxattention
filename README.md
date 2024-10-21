@@ -2,7 +2,7 @@
 
 Porting [FlexAttention](https://github.com/pytorch-labs/attention-gym) to pure JAX.
 
-Example usage (**For faster performance using Flash Attention, check examples/benchmark.py**):
+Example usage (**For faster performance using Flash Attention, check examples/example.py**):
 
 ```python
 import jax
@@ -37,15 +37,26 @@ if __name__ == "__main__":
         causal_mask, batch_size, num_heads, seq_len_q, seq_len_kv
     )
 
+    alibi = generate_alibi_bias(num_heads)
+
     output = flax_attention(
         query,
         key,
         value,
-        score_mod=generate_alibi_bias(num_heads),
+        score_mod=alibi,
         block_mask=block_mask,
     )
 
+    # Using Pallas Flash Attention (Much Faster!)
+    output = flax_attention_pallas(
+        query,
+        key,
+        value,
+        score_mod=alibi,
+    )
+
     print(output.shape)
+    # (8, 8, 2048, 64)
 ```
 
 ## Installation
