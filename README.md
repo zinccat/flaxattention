@@ -53,6 +53,7 @@ if __name__ == "__main__":
         key,
         value,
         score_mod=alibi,
+        block_mod=causal_mask
     )
 
     print(output.shape)
