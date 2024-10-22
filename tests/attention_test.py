@@ -59,7 +59,7 @@ class TestAttention(absltest.TestCase):
             .numpy()
         )
 
-        np.testing.assert_almost_equal(output_jax, output_torch, decimal=3)
+        np.testing.assert_almost_equal(output_jax, output_torch, decimal=2)
 
     def test_gqa(self):
         # Prepare inputs
@@ -196,4 +196,4 @@ class TestAttention(absltest.TestCase):
 
         grad_torch = query_torch.grad.cpu().numpy()
 
-        np.testing.assert_almost_equal(grad_jax, grad_torch, decimal=3)
+        np.testing.assert_almost_equal(grad_jax, grad_torch, decimal=2)

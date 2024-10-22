@@ -6,6 +6,7 @@ from flaxattention.core.blockmask import (
     or_masks,
 )
 from flaxattention.core.common import _mask_mod_signature, _score_mod_signature
+from .utils import visualize_attention_scores
 
 __all__ = [
     "math_attention",
@@ -17,4 +18,5 @@ __all__ = [
     "or_masks",
     "_mask_mod_signature",
     "_score_mod_signature",
+    "visualize_attention_scores",
 ]
