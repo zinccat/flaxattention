@@ -31,10 +31,6 @@ if __name__ == "__main__":
             score_mod=checkerboard_torch,
     )
 
-    grad = torch.autograd.grad(
-        output_torch.sum(), query_torch, create_graph=True
-    )[0]
-
     # benchmark
     from timeit import default_timer as timer
     start = timer()
@@ -52,9 +48,12 @@ if __name__ == "__main__":
 
     start = timer()
     for _ in range(100):
-        grad = torch.autograd.grad(
-            output_torch.sum(), query_torch, create_graph=True
-        )[0]
+        output_torch = flex_attention(
+            query_torch,
+            key_torch,
+            value_torch,
+            score_mod=checkerboard_torch,
+        ).sum().backward()
     torch.cuda.synchronize()
     end = timer()
 

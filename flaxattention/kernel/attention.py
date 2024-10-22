@@ -277,7 +277,7 @@ def _mha_forward(
     mask_mod: _mask_mod_signature | None,
     score_mod_grad: _score_mod_signature | None,
 ):
-    del backward_pass_impl
+    del backward_pass_impl, score_mod_grad
     batch_size, seq_len, num_heads, head_dim = q.shape
     block_q = min(block_q, seq_len)
     block_k = min(block_k, seq_len)

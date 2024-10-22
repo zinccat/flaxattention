@@ -80,29 +80,30 @@ if __name__ == "__main__":
     end = timer()
     print("Pure jax time taken:", end - start)
 
-    # try flax attention
-    from flax.nnx import dot_product_attention
-
-    # warm up
-    output = dot_product_attention(
-        query,
-        key,
-        value,
-    )
-    output.block_until_ready()
-
-    start = timer()
-    for _ in range(100):
-        output = dot_product_attention(
+    def fn0(query, key, value):
+        return flax_attention(
             query,
             key,
             value,
-        )
-    output.block_until_ready()
-    end = timer()
-    print("Flax attention time taken (no score_mod):", end - start)
+            score_mod=checkerboard,
+        ).sum()
+    grad_fn0 = jax.grad(fn0, 0)
+    grad_fn0 = jax.jit(grad_fn0)
 
-    # try mha kernel
+    # warm up
+    grad = grad_fn0(query, key, value)
+    grad.block_until_ready()
+
+    # print(grad[0, 0, 0])
+
+    start = timer()
+    for _ in range(100):
+        grad = grad_fn0(query, key, value)
+    grad.block_until_ready()
+    end = timer()
+    print("Pure jax gradient time taken:", end - start)
+
+    # try mha pallas kernel
     
     # warm up
     output = flax_attention_pallas(
@@ -113,6 +114,7 @@ if __name__ == "__main__":
         # mask_mod=causal,
     )
     output.block_until_ready()
+    # print(output[0, 0, 0])
 
     start = timer()
     for _ in range(100):
@@ -141,12 +143,58 @@ if __name__ == "__main__":
     grad = grad_fn(query, key, value)
     grad.block_until_ready()
 
+    # print(grad[0, 0, 0])
+
     start = timer()
     for _ in range(100):
         grad = grad_fn(query, key, value)
     grad.block_until_ready()
     end = timer()
-    print("Gradient time taken:", end - start)
+    print("Pallas gradient time taken:", end - start)
+
+    # try flax attention
+    from flax.nnx import dot_product_attention
+
+    # warm up
+    output = dot_product_attention(
+        query,
+        key,
+        value,
+    )
+    output.block_until_ready()
+
+    start = timer()
+    for _ in range(100):
+        output = dot_product_attention(
+            query,
+            key,
+            value,
+        )
+    output.block_until_ready()
+    end = timer()
+    print("Flax attention time taken (no score_mod):", end - start)
+
+    def fn1(query, key, value):
+        return dot_product_attention(
+            query,
+            key,
+            value,
+        ).sum()
+    grad_fn1 = jax.grad(fn1, 0)
+    grad_fn1 = jax.jit(grad_fn1)
+
+    # warm up
+    grad = grad_fn1(query, key, value)
+    grad.block_until_ready()
+
+    # print(grad[0, 0, 0])
+
+    start = timer()
+    for _ in range(100):
+        grad = grad_fn1(query, key, value)
+    grad.block_until_ready()
+    end = timer()
+    print("Flax gradient time taken (no score_mod):", end - start)
 
     # original palllas attention
     from jax.experimental.pallas.ops.gpu.attention import mha

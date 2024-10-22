@@ -91,10 +91,11 @@ TF32:
 - FlaxAttention (Without Pallas Flash Attention): 0.87s
 
 Float16:
-- FlexAttention: 0.11s
-- FlaxAttention (This repo): 0.13s
+| Method                 | Forward Time (s)           | Gradient Time (s)          |
+|------------------------|----------------------------|----------------------------|
+| FlaxAttention (Pure JAX) | 0.5692746052518487         | 0.8823547409847379         |
+| FlaxAttention (Pallas)                 | **0.13677988620474935**        | **0.5575501238927245** |
+| Flax (no score_mod)     | 0.07136831432580948        | 0.03911650087684393        |
+| FlexAttention (Torch)| **0.11708855209872127**        | **0.5104729640297592**         |
 
-We can see that the performance is about 20% slower than the original implementation. There are still some optimizations to be done.
-
-## Issues
-Autograd for Pallas is quite slow.
+We can see that the forward performance is about 20% slower than the original implementation, while backward about 8% slower. There are still some optimizations to be done.
