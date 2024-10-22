@@ -2,7 +2,7 @@
 
 Porting [FlexAttention](https://github.com/pytorch-labs/attention-gym) to pure JAX.
 
-Example usage (**For faster performance using Flash Attention, check examples/example.py**):
+Example usage:
 
 ```python
 import jax
@@ -58,6 +58,19 @@ if __name__ == "__main__":
 
     print(output.shape)
     # (8, 8, 2048, 64)
+
+    # Autograd
+    def fn(query, key, value):
+        return flax_attention_pallas(
+            query,
+            key,
+            value,
+            score_mod=checkerboard,
+        ).sum()
+    grad_fn = jax.grad(fn, 0)
+    grad_fn = jax.jit(grad_fn)
+
+    grad = grad_fn(query, key, value)
 ```
 
 ## Installation
@@ -82,3 +95,6 @@ Float16:
 - FlaxAttention (This repo): 0.13s
 
 We can see that the performance is about 20% slower than the original implementation. There are still some optimizations to be done.
+
+## Issues
+Autograd for Pallas is quite slow.

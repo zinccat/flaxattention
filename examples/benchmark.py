@@ -61,6 +61,7 @@ if __name__ == "__main__":
         score_mod=checkerboard,
         # block_mask=block_mask,
     )
+    output.block_until_ready()
     # print(output[0, 0, 0])
 
     # benchmark
@@ -75,7 +76,7 @@ if __name__ == "__main__":
             score_mod=checkerboard,
             # block_mask=block_mask,
         )
-    output[0].block_until_ready()
+    output.block_until_ready()
     end = timer()
     print("Pure jax time taken:", end - start)
 
@@ -88,6 +89,8 @@ if __name__ == "__main__":
         key,
         value,
     )
+    output.block_until_ready()
+
     start = timer()
     for _ in range(100):
         output = dot_product_attention(
@@ -109,6 +112,7 @@ if __name__ == "__main__":
         score_mod=checkerboard,
         # mask_mod=causal,
     )
+    output.block_until_ready()
 
     start = timer()
     for _ in range(100):
@@ -122,5 +126,63 @@ if __name__ == "__main__":
     output.block_until_ready()
     end = timer()
     print("Pallas attention time taken:", end - start)
-    print(output.shape)
-    # print(output[0, 0, 0])
+
+    def fn(query, key, value):
+        return flax_attention_pallas(
+            query,
+            key,
+            value,
+            score_mod=checkerboard,
+        ).sum()
+    grad_fn = jax.grad(fn, 0)
+    grad_fn = jax.jit(grad_fn)
+
+    # warm up
+    grad = grad_fn(query, key, value)
+    grad.block_until_ready()
+
+    start = timer()
+    for _ in range(100):
+        grad = grad_fn(query, key, value)
+    grad.block_until_ready()
+    end = timer()
+    print("Gradient time taken:", end - start)
+
+    # original palllas attention
+    from jax.experimental.pallas.ops.gpu.attention import mha
+
+    def fn2(query, key, value):
+        return mha(
+            query,
+            key,
+            value,
+            segment_ids=None,
+            block_q=64, 
+            block_k=64
+        ).sum()
+
+    grad_fn2 = jax.grad(fn2, 0)
+
+    query = jnp.moveaxis(query, 1, 2)
+    key = jnp.moveaxis(key, 1, 2)
+    value = jnp.moveaxis(value, 1, 2)
+
+    output = mha(query, key, value, segment_ids=None, block_q=64, block_k=64)
+    output.block_until_ready()
+
+    start = timer()
+    for _ in range(100):
+        output = mha(query, key, value, segment_ids=None)
+    end = timer()
+    output.block_until_ready()
+    print("Original Pallas attention time taken:", end - start)
+
+    # warm up
+    grad = grad_fn2(query, key, value)
+
+    start = timer()
+    for _ in range(100):
+        grad = grad_fn2(query, key, value)
+    end = timer()
+    grad.block_until_ready()
+    print("Original Pallas attention time taken:", end - start)
