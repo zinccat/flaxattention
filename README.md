@@ -100,7 +100,7 @@ Float16:
 |------------------------|----------------------------|----------------------------|
 | FlaxAttention (Pure JAX) | 0.5692746052518487         | 0.8823547409847379         |
 | FlaxAttention (Pallas)                 | **0.13677988620474935**        | **0.5575501238927245** |
-| Jax Attention (no score_mod)     | 0.2551286369562149        | 0.04072062578052282        |
+| Jax Attention (no score_mod)     | 1.6788566000759602        | 1.0905949068255723        |
 | FlexAttention (Torch)| **0.11708855209872127**        | **0.5104729640297592**         |
 
 We can see that the forward performance is about 20% slower than the original implementation, while backward about 8% slower. There are still some optimizations to be done.

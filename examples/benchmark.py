@@ -155,20 +155,23 @@ if __name__ == "__main__":
 
     # try jax attention
 
+    query_transposed = jnp.moveaxis(query, 1, 2)
+    key_transposed = jnp.moveaxis(key, 1, 2)
+    value_transposed = jnp.moveaxis(value, 1, 2)
     # warm up
     output = dot_product_attention(
-        query,
-        key,
-        value,
+        query_transposed,
+        key_transposed,
+        value_transposed,
     )
     output.block_until_ready()
 
     start = timer()
     for _ in range(100):
         output = dot_product_attention(
-            query,
-            key,
-            value,
+            query_transposed,
+            key_transposed,
+            value_transposed,
         )
     output.block_until_ready()
     end = timer()
@@ -184,14 +187,14 @@ if __name__ == "__main__":
     grad_fn1 = jax.jit(grad_fn1)
 
     # warm up
-    grad = grad_fn1(query, key, value)
+    grad = grad_fn1(query_transposed, key_transposed, value_transposed)
     grad.block_until_ready()
 
     # print(grad[0, 0, 0])
 
     start = timer()
     for _ in range(100):
-        grad = grad_fn1(query, key, value)
+        grad = grad_fn1(query_transposed, key_transposed, value_transposed)
     grad.block_until_ready()
     end = timer()
     print("Jax dot product attention gradient time taken (no score_mod):", end - start)

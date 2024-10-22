@@ -252,15 +252,15 @@ def flax_attention_pallas(
     _validate_embed_dim(query, key, value)
     if query.ndim != 4 or key.ndim != 4 or value.ndim != 4:
         raise NotImplementedError("NYI: query, key, and value must be 4D tensors")
-    if (not enable_gqa) and query.shape[-3] != key.shape[-3]:
+    if (not enable_gqa) and query.shape[-2] != key.shape[-2]:
         raise ValueError(
             f"Expect query and key/value to have the same number of heads "
-            f"but got Hq={query.shape[-3]} and Hkv={key.shape[-3]}. "
+            f"but got Hq={query.shape[-2]} and Hkv={key.shape[-2]}. "
             f"Try setting enable_gqa=True for GQA."
         )
     if enable_gqa:
-        Hq = query.shape[1]
-        Hkv = key.shape[1]
+        Hq = query.shape[2]
+        Hkv = key.shape[2]
         if Hq % Hkv != 0:
             raise ValueError(
                 f"Expect number of query heads to be a multiple of kv heads for GQA "
