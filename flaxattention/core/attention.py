@@ -75,7 +75,7 @@ def math_attention(
     kernel_options: Dict[str, Any],
     score_mod_other_buffers: Tuple = (),
     mask_mod_other_buffers: Tuple = (),
-    use_pallas: bool = True,
+    use_pallas: bool = False,
 ) -> Tuple[Array, Array]:
     # Broadcast query & key along head dimension for GQA
     G = query.shape[1] // key.shape[1]
@@ -258,22 +258,6 @@ def flax_attention_pallas(
             )
     if sm_scale is None:
         sm_scale = 1 / math.sqrt(query.shape[-1])
-
-    if score_mod or mask_mod:
-        dimensions = [
-            (None, None, None, 0),  # Map over kv_idx
-            (None, None, 0, None),  # Map over q_idx
-        ]
-        if score_mod:
-            prefix = (0,)
-            for dims in dimensions:
-                in_axes = prefix + dims
-                score_mod = jax.vmap(score_mod, in_axes=in_axes, out_axes=0)
-        if mask_mod:
-            prefix = ()
-            for dims in dimensions:
-                in_axes = prefix + dims
-                mask_mod = jax.vmap(mask_mod, in_axes=in_axes, out_axes=0)
 
     output = mha_pallas(
         q=query,

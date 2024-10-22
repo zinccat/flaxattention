@@ -25,6 +25,7 @@ from jax.experimental import pallas as pl
 from jax.experimental.pallas import triton as plgpu
 import jax.numpy as jnp
 import numpy as np
+from jax import grad
 
 from flaxattention.core.common import _score_mod_signature, _mask_mod_signature
 
@@ -215,6 +216,23 @@ def mha(
     num_warps_ = num_warps
     if num_warps_ is None:
         num_warps_ = 4 if head_dim <= 64 else 8
+
+    if score_mod is not None or mask_mod is not None:
+        dimensions = [
+            (None, None, None, 0),  # Map over kv_idx
+            (None, None, 0, None),  # Map over q_idx
+        ]
+        if score_mod is not None:
+            prefix = (0,)
+            for dims in dimensions:
+                in_axes = prefix + dims
+                score_mod = jax.vmap(score_mod, in_axes=in_axes, out_axes=0)
+        if mask_mod is not None:
+            prefix = ()
+            for dims in dimensions:
+                in_axes = prefix + dims
+                mask_mod = jax.vmap(mask_mod, in_axes=in_axes, out_axes=0)
+
     kernel = functools.partial(
         mha_forward_kernel,
         num_heads=num_heads,
@@ -285,6 +303,23 @@ def _mha_forward(
     num_warps_ = num_warps
     if num_warps_ is None:
         num_warps_ = 4 if head_dim <= 64 else 8
+
+    if score_mod is not None or mask_mod is not None:
+        dimensions = [
+            (None, None, None, 0),  # Map over kv_idx
+            (None, None, 0, None),  # Map over q_idx
+        ]
+        if score_mod is not None:
+            prefix = (0,)
+            for dims in dimensions:
+                in_axes = prefix + dims
+                score_mod = jax.vmap(score_mod, in_axes=in_axes, out_axes=0)
+        if mask_mod is not None:
+            prefix = ()
+            for dims in dimensions:
+                in_axes = prefix + dims
+                mask_mod = jax.vmap(mask_mod, in_axes=in_axes, out_axes=0)
+
     kernel = functools.partial(
         mha_forward_kernel,
         num_heads=num_heads,
@@ -388,6 +423,7 @@ def mha_backward_kernel(
     block_d: int,
     score_mod: _score_mod_signature | None = None,
     mask_mod: _mask_mod_signature | None = None,
+    score_mod_grad: _score_mod_signature | None = None,
 ):
     del out_ref  # Not needed
     seq_len = q_ref.shape[0]
@@ -419,7 +455,7 @@ def mha_backward_kernel(
         qk = pl.dot(q, k.T)
         if sm_scale != 1.0:
             qk *= sm_scale
-
+        qk_pre_mod = qk
         if score_mod is not None or mask_mod is not None:
             # Apply the custom score modification function here
             span_q = start_q * block_q1 + jnp.arange(block_q1)
@@ -434,7 +470,6 @@ def mha_backward_kernel(
                     score_mod(qk, start_b, start_h, span_q, span_k),
                     DEFAULT_MASK_VALUE,
                 )
-
         if causal or segment_ids_ref is not None:
             mask = None
             if segment_ids_ref is not None:
@@ -448,18 +483,24 @@ def mha_backward_kernel(
                     causal_mask if mask is None else jnp.logical_and(mask, causal_mask)
                 )
             qk = jnp.where(mask, qk, DEFAULT_MASK_VALUE)
-
         lse = pl.load(lse_ref, (curr_q_slice,))
         di = pl.load(delta_ref, (curr_q_slice,))
         do = pl.load(do_scaled_ref, (curr_q_slice, slice(None)))
-
-        p = jnp.exp(qk - lse[:, None]) # softmax_scores
+        p = jnp.exp(qk - lse[:, None])  # softmax_scores
         dv = dv + pl.dot(p.astype(do.dtype).T, do)
         dp = jnp.zeros((block_q1, block_k1), dtype=jnp.float32) - di[:, None]
         dp = dp + pl.dot(do, v.T)
         ds = p * dp
         if sm_scale != 1.0:
             ds = ds * sm_scale
+        if score_mod is not None:
+            # Compute the gradient of score_mod with respect to qk
+            grad_score_mod = jnp.where(
+                qk != DEFAULT_MASK_VALUE,
+                score_mod_grad(qk_pre_mod, start_b, start_h, span_q, span_k),
+                0.0,
+            )
+            ds = ds * grad_score_mod  # Element-wise multiplication
         dk = dk + pl.dot(ds.astype(q_ref.dtype).T, q)
 
         return dv, dk
@@ -498,8 +539,9 @@ def mha_backward_kernel(
         qk = pl.dot(q, k.T)
         if sm_scale != 1.0:
             qk *= sm_scale
+        qk_pre_mod = qk
 
-        if score_mod is not None or mask_mod is not None:
+        if score_mod is not None or mask_mod is not None or causal:
             # Apply the custom score modification function here
             span_k = start_k * block_k2 + jnp.arange(block_k2)
             # boolean mask for the current qk slice
@@ -534,7 +576,14 @@ def mha_backward_kernel(
         ds = p * dp
         if sm_scale != 1.0:
             ds = ds * sm_scale
-
+        if score_mod is not None:
+            # Compute the gradient of score_mod with respect to qk
+            grad_score_mod = jnp.where(
+                qk != DEFAULT_MASK_VALUE,
+                score_mod_grad(qk_pre_mod, start_b, start_h, span_q, span_k),
+                0.0,
+            )
+            ds = ds * grad_score_mod  # Element-wise multiplication
         dq = dq + pl.dot(ds.astype(k.dtype), k).astype(dq.dtype)
 
         return dq
@@ -602,6 +651,28 @@ def _mha_backward(
 
         grid = (batch_size, num_heads, pl.cdiv(seq_len, block_k))
         num_warps = 8
+
+        score_mod_grad = grad(score_mod) if score_mod is not None else None
+
+        if score_mod or mask_mod:
+            dimensions = [
+                (None, None, None, 0),  # Map over kv_idx
+                (None, None, 0, None),  # Map over q_idx
+            ]
+            if score_mod is not None:
+                prefix = (0,)
+                for dims in dimensions:
+                    in_axes = prefix + dims
+                    score_mod = jax.vmap(score_mod, in_axes=in_axes, out_axes=0)
+                    score_mod_grad = jax.vmap(
+                        score_mod_grad, in_axes=in_axes, out_axes=0
+                    )
+            if mask_mod is not None:
+                prefix = ()
+                for dims in dimensions:
+                    in_axes = prefix + dims
+                    mask_mod = jax.vmap(mask_mod, in_axes=in_axes, out_axes=0)
+
         dq, dk, dv = pl.pallas_call(
             functools.partial(
                 mha_backward_kernel,
@@ -614,6 +685,7 @@ def _mha_backward(
                 block_d=head_dim,
                 score_mod=score_mod,
                 mask_mod=mask_mod,
+                score_mod_grad=score_mod_grad,
             ),
             out_shape=out_shapes,
             in_specs=in_specs,
