@@ -2,7 +2,9 @@
 
 Porting [FlexAttention](https://github.com/pytorch-labs/attention-gym) to pure JAX.
 
-Example usage:
+Please install Jax nightly: pip install -U --pre jax jaxlib "jax-cuda12-plugin[with_cuda]" jax-cuda12-pjrt -f https://storage.googleapis.com/jax-releases/jax_nightly_releases.html
+
+Example usage: 
 
 ```python
 import jax

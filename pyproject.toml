@@ -12,6 +12,14 @@ homepage = "https://github.com/zinccat/flaxattention"
 python = "^3.10"
 jax = "^0.4.34"
 
+[tool.poetry.extras]
+viz = [
+    "matplotlib",
+    "numpy",
+    "jsonargparse",
+    "docstring-parser"
+]
+
 [tool.mypy]
 disable_error_code = "import-untyped"
 
