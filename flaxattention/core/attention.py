@@ -220,7 +220,17 @@ def flax_attention(
         return out
 
 
-@partial(jax.jit, static_argnames=("score_mod", "mask_mod", "block_q", "block_k", "enable_gqa", "bhln"))
+@partial(
+    jax.jit,
+    static_argnames=(
+        "score_mod",
+        "mask_mod",
+        "block_q",
+        "block_k",
+        "enable_gqa",
+        "bhln",
+    ),
+)
 def flax_attention_pallas(
     query: Array,
     key: Array,
@@ -259,6 +269,24 @@ def flax_attention_pallas(
     if sm_scale is None:
         sm_scale = 1 / math.sqrt(query.shape[-1])
 
+    if score_mod or mask_mod:
+        dimensions = [
+            (None, None, None, 0),  # Map over kv_idx
+            (None, None, 0, None),  # Map over q_idx
+        ]
+        if score_mod is not None:
+            score_mod_grad = jax.grad(score_mod) if score_mod is not None else None
+            prefix = (0,)
+            for dims in dimensions:
+                in_axes = prefix + dims
+                score_mod = jax.vmap(score_mod, in_axes=in_axes, out_axes=0)
+                score_mod_grad = jax.vmap(score_mod_grad, in_axes=in_axes, out_axes=0)
+        if mask_mod is not None:
+            prefix = ()
+            for dims in dimensions:
+                in_axes = prefix + dims
+                mask_mod = jax.vmap(mask_mod, in_axes=in_axes, out_axes=0)
+
     output = mha_pallas(
         q=query,
         k=key,
@@ -269,5 +297,6 @@ def flax_attention_pallas(
         block_k=block_k,
         score_mod=score_mod,
         mask_mod=mask_mod,
+        score_mod_grad=score_mod_grad if score_mod is not None else None,
     )
     return jnp.moveaxis(output, 1, 2) if bhln else output

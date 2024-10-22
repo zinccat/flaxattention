@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 import functools
-from typing import Any, Callable
+from typing import Any
 
 import jax
 from jax import lax
@@ -25,7 +25,6 @@ from jax.experimental import pallas as pl
 from jax.experimental.pallas import triton as plgpu
 import jax.numpy as jnp
 import numpy as np
-from jax import grad
 
 from flaxattention.core.common import _score_mod_signature, _mask_mod_signature
 
@@ -167,7 +166,7 @@ def segment_mask(
 
 
 @functools.partial(
-    jax.custom_vjp, nondiff_argnums=[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    jax.custom_vjp, nondiff_argnums=[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 )
 @functools.partial(
     jax.jit,
@@ -184,6 +183,7 @@ def segment_mask(
         "debug",
         "score_mod",
         "mask_mod",
+        "score_mod_grad",
     ],
 )
 def mha(
@@ -203,6 +203,7 @@ def mha(
     debug: bool = False,
     score_mod: _score_mod_signature | None = None,
     mask_mod: _mask_mod_signature | None = None,
+    score_mod_grad: _score_mod_signature | None = None,
 ):
     del backward_pass_impl
     batch_size, seq_len, num_heads, head_dim = q.shape
@@ -216,22 +217,6 @@ def mha(
     num_warps_ = num_warps
     if num_warps_ is None:
         num_warps_ = 4 if head_dim <= 64 else 8
-
-    if score_mod is not None or mask_mod is not None:
-        dimensions = [
-            (None, None, None, 0),  # Map over kv_idx
-            (None, None, 0, None),  # Map over q_idx
-        ]
-        if score_mod is not None:
-            prefix = (0,)
-            for dims in dimensions:
-                in_axes = prefix + dims
-                score_mod = jax.vmap(score_mod, in_axes=in_axes, out_axes=0)
-        if mask_mod is not None:
-            prefix = ()
-            for dims in dimensions:
-                in_axes = prefix + dims
-                mask_mod = jax.vmap(mask_mod, in_axes=in_axes, out_axes=0)
 
     kernel = functools.partial(
         mha_forward_kernel,
@@ -290,6 +275,7 @@ def _mha_forward(
     debug: bool,
     score_mod: _score_mod_signature | None,
     mask_mod: _mask_mod_signature | None,
+    score_mod_grad: _score_mod_signature | None,
 ):
     del backward_pass_impl
     batch_size, seq_len, num_heads, head_dim = q.shape
@@ -303,22 +289,6 @@ def _mha_forward(
     num_warps_ = num_warps
     if num_warps_ is None:
         num_warps_ = 4 if head_dim <= 64 else 8
-
-    if score_mod is not None or mask_mod is not None:
-        dimensions = [
-            (None, None, None, 0),  # Map over kv_idx
-            (None, None, 0, None),  # Map over q_idx
-        ]
-        if score_mod is not None:
-            prefix = (0,)
-            for dims in dimensions:
-                in_axes = prefix + dims
-                score_mod = jax.vmap(score_mod, in_axes=in_axes, out_axes=0)
-        if mask_mod is not None:
-            prefix = ()
-            for dims in dimensions:
-                in_axes = prefix + dims
-                mask_mod = jax.vmap(mask_mod, in_axes=in_axes, out_axes=0)
 
     kernel = functools.partial(
         mha_forward_kernel,
@@ -610,6 +580,7 @@ def _mha_backward(
     debug: bool,
     score_mod: _score_mod_signature | None,
     mask_mod: _mask_mod_signature | None,
+    score_mod_grad: _score_mod_signature | None,
     res,
     do,
 ):
@@ -650,28 +621,7 @@ def _mha_backward(
             in_specs.insert(3, pl.BlockSpec((None, seq_len), lambda i, j, _: (i, 0)))
 
         grid = (batch_size, num_heads, pl.cdiv(seq_len, block_k))
-        num_warps = 8
-
-        score_mod_grad = grad(score_mod) if score_mod is not None else None
-
-        if score_mod or mask_mod:
-            dimensions = [
-                (None, None, None, 0),  # Map over kv_idx
-                (None, None, 0, None),  # Map over q_idx
-            ]
-            if score_mod is not None:
-                prefix = (0,)
-                for dims in dimensions:
-                    in_axes = prefix + dims
-                    score_mod = jax.vmap(score_mod, in_axes=in_axes, out_axes=0)
-                    score_mod_grad = jax.vmap(
-                        score_mod_grad, in_axes=in_axes, out_axes=0
-                    )
-            if mask_mod is not None:
-                prefix = ()
-                for dims in dimensions:
-                    in_axes = prefix + dims
-                    mask_mod = jax.vmap(mask_mod, in_axes=in_axes, out_axes=0)
+        num_warps = 4 if head_dim <= 64 else 8
 
         dq, dk, dv = pl.pallas_call(
             functools.partial(
