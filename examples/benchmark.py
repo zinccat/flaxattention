@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 from jax import Array
+from jax.nn import dot_product_attention
 
 from flaxattention import flax_attention, create_block_mask, flax_attention_pallas
 
@@ -152,8 +153,7 @@ if __name__ == "__main__":
     end = timer()
     print("Pallas gradient time taken:", end - start)
 
-    # try flax attention
-    from flax.nnx import dot_product_attention
+    # try jax attention
 
     # warm up
     output = dot_product_attention(
@@ -172,7 +172,7 @@ if __name__ == "__main__":
         )
     output.block_until_ready()
     end = timer()
-    print("Flax attention time taken (no score_mod):", end - start)
+    print("Jax dot product attention time taken (no score_mod):", end - start)
 
     def fn1(query, key, value):
         return dot_product_attention(
@@ -194,7 +194,7 @@ if __name__ == "__main__":
         grad = grad_fn1(query, key, value)
     grad.block_until_ready()
     end = timer()
-    print("Flax gradient time taken (no score_mod):", end - start)
+    print("Jax dot product attention gradient time taken (no score_mod):", end - start)
 
     # original palllas attention
     from jax.experimental.pallas.ops.gpu.attention import mha

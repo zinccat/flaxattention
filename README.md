@@ -85,7 +85,7 @@ poetry install
 
 For the checkboard mod_score examples of flexattention, using RTX 3090, with parameters `batch_size=8, num_heads=8, seq_len_q=2048, seq_len_kv=2048, feature_size=64`, running 100 iterations:
 
-TF32:
+TF32 (Forward):
 - FlexAttention: 0.27s
 - FlaxAttention (This repo): 0.33s
 - FlaxAttention (Without Pallas Flash Attention): 0.87s
@@ -95,7 +95,7 @@ Float16:
 |------------------------|----------------------------|----------------------------|
 | FlaxAttention (Pure JAX) | 0.5692746052518487         | 0.8823547409847379         |
 | FlaxAttention (Pallas)                 | **0.13677988620474935**        | **0.5575501238927245** |
-| Flax (no score_mod)     | 0.07136831432580948        | 0.03911650087684393        |
+| Jax Attention (no score_mod)     | 0.2551286369562149        | 0.04072062578052282        |
 | FlexAttention (Torch)| **0.11708855209872127**        | **0.5104729640297592**         |
 
 We can see that the forward performance is about 20% slower than the original implementation, while backward about 8% slower. There are still some optimizations to be done.
