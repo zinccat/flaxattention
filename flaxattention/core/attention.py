@@ -168,7 +168,7 @@ def _validate_embed_dim(query: Array, key: Array, value: Array):
             f"Got Ev={value.shape[-1]} and E={query.shape[-1]}."
         )
 
-
+@partial(jax.jit, static_argnames=("score_mod", "block_mask", "scale", "enable_gqa", "return_lse", "kernel_options"))
 def flax_attention(
     query: Array,
     key: Array,

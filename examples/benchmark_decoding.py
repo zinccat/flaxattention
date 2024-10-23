@@ -49,10 +49,6 @@ if __name__ == "__main__":
         dtype=jnp.float16,
     )
 
-    flax_attention = jax.jit(
-        flax_attention, static_argnames=("score_mod", "block_mask")
-    )
-
     block_mask = create_block_mask(causal, batch_size, num_heads, seq_len_q, seq_len_kv)
 
     output = flax_attention(
@@ -81,29 +77,6 @@ if __name__ == "__main__":
     end = timer()
     print("Pure jax time taken:", end - start)
 
-    def fn0(query, key, value):
-        return flax_attention(
-            query,
-            key,
-            value,
-            score_mod=checkerboard,
-        ).sum()
-    grad_fn0 = jax.grad(fn0, 0)
-    grad_fn0 = jax.jit(grad_fn0)
-
-    # warm up
-    grad = grad_fn0(query, key, value)
-    grad.block_until_ready()
-
-    # print(grad[0, 0, 0])
-
-    start = timer()
-    for _ in range(100):
-        grad = grad_fn0(query, key, value)
-    grad.block_until_ready()
-    end = timer()
-    print("Pure jax gradient time taken:", end - start)
-
     # try mha pallas kernel
     
     # warm up
@@ -130,30 +103,6 @@ if __name__ == "__main__":
     end = timer()
     print("Pallas attention time taken:", end - start)
 
-    def fn(query, key, value):
-        return flax_attention_pallas(
-            query,
-            key,
-            value,
-            score_mod=checkerboard,
-        ).sum()
-    grad_fn = jax.grad(fn, 0)
-    grad_fn = jax.jit(grad_fn)
-
-    # warm up
-    grad = grad_fn(query, key, value)
-    grad.block_until_ready()
-
-    # print(grad[0, 0, 0])
-
-    start = timer()
-    for _ in range(100):
-        grad = grad_fn(query, key, value)
-    grad.block_until_ready()
-    end = timer()
-    print("Pallas gradient time taken:", end - start)
-
-
     # try jax attention
 
     query_transposed = jnp.moveaxis(query, 1, 2)
@@ -178,46 +127,27 @@ if __name__ == "__main__":
     end = timer()
     print("Jax dot product attention time taken (no score_mod):", end - start)
 
-    def fn1(query, key, value):
-        return dot_product_attention(
-            query,
-            key,
-            value,
-        ).sum()
-    grad_fn1 = jax.grad(fn1, 0)
-    grad_fn1 = jax.jit(grad_fn1)
+    # original palllas attention
+    from jax.experimental.pallas.ops.gpu.decode_attention import gqa
 
-    # warm up
-    grad = grad_fn1(query_transposed, key_transposed, value_transposed)
-    grad.block_until_ready()
+    query = query.squeeze(2)
+    key = jnp.moveaxis(key, 1, 2)
+    value = jnp.moveaxis(value, 1, 2)
 
-    # print(grad[0, 0, 0])
+    output = gqa(query, key, value)
+    output.block_until_ready()
 
     start = timer()
     for _ in range(100):
-        grad = grad_fn1(query_transposed, key_transposed, value_transposed)
-    grad.block_until_ready()
+        output = gqa(query, key, value)
     end = timer()
-    print("Jax dot product attention gradient time taken (no score_mod):", end - start)
+    output.block_until_ready()
+    print("Original Pallas decoding attention time taken:", end - start)
 
     # original palllas attention
     from jax.experimental.pallas.ops.gpu.attention import mha
 
-    def fn2(query, key, value):
-        return mha(
-            query,
-            key,
-            value,
-            segment_ids=None,
-            block_q=64, 
-            block_k=64
-        ).sum()
-
-    grad_fn2 = jax.grad(fn2, 0)
-
-    query = jnp.moveaxis(query, 1, 2)
-    key = jnp.moveaxis(key, 1, 2)
-    value = jnp.moveaxis(value, 1, 2)
+    query = query[:, :, None, :]
 
     # pad query
     if query.shape[1] < 16:
@@ -232,14 +162,4 @@ if __name__ == "__main__":
         output = mha(query, key, value, segment_ids=None)
     end = timer()
     output.block_until_ready()
-    print("Original Pallas attention time taken:", end - start)
-
-    # warm up
-    grad = grad_fn2(query, key, value)
-
-    start = timer()
-    for _ in range(100):
-        grad = grad_fn2(query, key, value)
-    end = timer()
-    grad.block_until_ready()
     print("Original Pallas attention time taken:", end - start)

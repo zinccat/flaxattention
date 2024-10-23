@@ -49,10 +49,6 @@ if __name__ == "__main__":
         dtype=jnp.float16,
     )
 
-    flax_attention = jax.jit(
-        flax_attention, static_argnames=("score_mod", "block_mask")
-    )
-
     block_mask = create_block_mask(causal, batch_size, num_heads, seq_len_q, seq_len_kv)
 
     output = flax_attention(
