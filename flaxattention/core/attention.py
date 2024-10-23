@@ -219,7 +219,6 @@ def flax_attention(
     else:
         return out
 
-
 @partial(
     jax.jit,
     static_argnames=(
@@ -268,6 +267,17 @@ def flax_attention_pallas(
             )
     if sm_scale is None:
         sm_scale = 1 / math.sqrt(query.shape[-1])
+    
+    b, l_q, h, n = query.shape
+    if l_q < 16:
+        # padding
+        pad = 16 - l_q
+        query = jnp.pad(query, ((0, 0), (0, pad), (0, 0), (0, 0)))
+
+    if score_mod is None:
+        score_mod = _identity
+    if mask_mod is None:
+        mask_mod = _create_empty_block_mask(query, key).as_tuple()[-1]
 
     if score_mod or mask_mod:
         dimensions = [
@@ -299,4 +309,6 @@ def flax_attention_pallas(
         mask_mod=mask_mod,
         score_mod_grad=score_mod_grad if score_mod is not None else None,
     )
+    if l_q < 16:
+        output = output[:, :l_q, :, :]
     return jnp.moveaxis(output, 1, 2) if bhln else output

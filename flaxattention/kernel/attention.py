@@ -81,21 +81,18 @@ def mha_forward_kernel(
         if sm_scale != 1.0:
             qk *= sm_scale  # [block_q, block_k]
 
-        if score_mod is not None or mask_mod is not None:
-            # Apply the custom score modification function here
-            span_q = start_q * block_q + jnp.arange(block_q)
-            span_k = start_k * block_k + jnp.arange(block_k)
-            # boolean mask for the current qk slice
-            if mask_mod is not None:
-                qk = jnp.where(
-                    mask_mod(start_b, start_h, span_q, span_k), qk, DEFAULT_MASK_VALUE
-                )
-            if score_mod is not None:
-                qk = jnp.where(
-                    qk != DEFAULT_MASK_VALUE,
-                    score_mod(qk, start_b, start_h, span_q, span_k),
-                    DEFAULT_MASK_VALUE,
-                )
+        # Apply the custom score modification function here
+        span_q = start_q * block_q + jnp.arange(block_q)
+        span_k = start_k * block_k + jnp.arange(block_k)
+        # boolean mask for the current qk slice
+        qk = jnp.where(
+            mask_mod(start_b, start_h, span_q, span_k), qk, DEFAULT_MASK_VALUE
+        )
+        qk = jnp.where(
+            qk != DEFAULT_MASK_VALUE,
+            score_mod(qk, start_b, start_h, span_q, span_k),
+            DEFAULT_MASK_VALUE,
+        )
         # Avoids Triton crash.
         # if num_heads > 2:
         #   qk = qk.astype(q_ref.dtype)
@@ -426,20 +423,16 @@ def mha_backward_kernel(
         if sm_scale != 1.0:
             qk *= sm_scale
         qk_pre_mod = qk
-        if score_mod is not None or mask_mod is not None:
-            # Apply the custom score modification function here
-            span_q = start_q * block_q1 + jnp.arange(block_q1)
-            # boolean mask for the current qk slice
-            if mask_mod is not None:
-                qk = jnp.where(
-                    mask_mod(start_b, start_h, span_q, span_k), qk, DEFAULT_MASK_VALUE
-                )
-            if score_mod is not None:
-                qk = jnp.where(
-                    qk != DEFAULT_MASK_VALUE,
-                    score_mod(qk, start_b, start_h, span_q, span_k),
-                    DEFAULT_MASK_VALUE,
-                )
+        span_q = start_q * block_q1 + jnp.arange(block_q1)
+        # boolean mask for the current qk slice
+        qk = jnp.where(
+            mask_mod(start_b, start_h, span_q, span_k), qk, DEFAULT_MASK_VALUE
+        )
+        qk = jnp.where(
+            qk != DEFAULT_MASK_VALUE,
+            score_mod(qk, start_b, start_h, span_q, span_k),
+            DEFAULT_MASK_VALUE,
+        )
         if causal or segment_ids_ref is not None:
             mask = None
             if segment_ids_ref is not None:
@@ -463,14 +456,13 @@ def mha_backward_kernel(
         ds = p * dp
         if sm_scale != 1.0:
             ds = ds * sm_scale
-        if score_mod is not None:
-            # Compute the gradient of score_mod with respect to qk
-            grad_score_mod = jnp.where(
-                qk != DEFAULT_MASK_VALUE,
-                score_mod_grad(qk_pre_mod, start_b, start_h, span_q, span_k),
-                0.0,
-            )
-            ds = ds * grad_score_mod  # Element-wise multiplication
+        # Compute the gradient of score_mod with respect to qk
+        grad_score_mod = jnp.where(
+            qk != DEFAULT_MASK_VALUE,
+            score_mod_grad(qk_pre_mod, start_b, start_h, span_q, span_k),
+            0.0,
+        )
+        ds = ds * grad_score_mod  # Element-wise multiplication
         dk = dk + pl.dot(ds.astype(q_ref.dtype).T, q)
 
         return dv, dk
@@ -511,20 +503,16 @@ def mha_backward_kernel(
             qk *= sm_scale
         qk_pre_mod = qk
 
-        if score_mod is not None or mask_mod is not None or causal:
-            # Apply the custom score modification function here
-            span_k = start_k * block_k2 + jnp.arange(block_k2)
-            # boolean mask for the current qk slice
-            if mask_mod is not None:
-                qk = jnp.where(
-                    mask_mod(start_b, start_h, span_q, span_k), qk, DEFAULT_MASK_VALUE
-                )
-            if score_mod is not None:
-                qk = jnp.where(
-                    qk != DEFAULT_MASK_VALUE,
-                    score_mod(qk, start_b, start_h, span_q, span_k),
-                    DEFAULT_MASK_VALUE,
-                )
+        span_k = start_k * block_k2 + jnp.arange(block_k2)
+        # boolean mask for the current qk slice
+        qk = jnp.where(
+            mask_mod(start_b, start_h, span_q, span_k), qk, DEFAULT_MASK_VALUE
+        )
+        qk = jnp.where(
+            qk != DEFAULT_MASK_VALUE,
+            score_mod(qk, start_b, start_h, span_q, span_k),
+            DEFAULT_MASK_VALUE,
+        )
 
         if causal or segment_ids_ref is not None:
             mask = None
@@ -546,14 +534,13 @@ def mha_backward_kernel(
         ds = p * dp
         if sm_scale != 1.0:
             ds = ds * sm_scale
-        if score_mod is not None:
-            # Compute the gradient of score_mod with respect to qk
-            grad_score_mod = jnp.where(
-                qk != DEFAULT_MASK_VALUE,
-                score_mod_grad(qk_pre_mod, start_b, start_h, span_q, span_k),
-                0.0,
-            )
-            ds = ds * grad_score_mod  # Element-wise multiplication
+        # Compute the gradient of score_mod with respect to qk
+        grad_score_mod = jnp.where(
+            qk != DEFAULT_MASK_VALUE,
+            score_mod_grad(qk_pre_mod, start_b, start_h, span_q, span_k),
+            0.0,
+        )
+        ds = ds * grad_score_mod  # Element-wise multiplication
         dq = dq + pl.dot(ds.astype(k.dtype), k).astype(dq.dtype)
 
         return dq
