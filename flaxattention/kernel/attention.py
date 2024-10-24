@@ -85,13 +85,9 @@ def mha_forward_kernel(
         span_q = start_q * block_q + jnp.arange(block_q)
         span_k = start_k * block_k + jnp.arange(block_k)
         # boolean mask for the current qk slice
+        qk = score_mod(qk, start_b, start_h, span_q, span_k)
         qk = jnp.where(
             mask_mod(start_b, start_h, span_q, span_k), qk, DEFAULT_MASK_VALUE
-        )
-        qk = jnp.where(
-            qk != DEFAULT_MASK_VALUE,
-            score_mod(qk, start_b, start_h, span_q, span_k),
-            DEFAULT_MASK_VALUE,
         )
         # Avoids Triton crash.
         # if num_heads > 2:
@@ -431,13 +427,9 @@ def mha_backward_kernel(
         qk_pre_mod = qk
         span_q = start_q * block_q1 + jnp.arange(block_q1)
         # boolean mask for the current qk slice
+        qk = score_mod(qk, start_b, start_h, span_q, span_k)
         qk = jnp.where(
             mask_mod(start_b, start_h, span_q, span_k), qk, DEFAULT_MASK_VALUE
-        )
-        qk = jnp.where(
-            qk != DEFAULT_MASK_VALUE,
-            score_mod(qk, start_b, start_h, span_q, span_k),
-            DEFAULT_MASK_VALUE,
         )
         if causal or segment_ids_ref is not None:
             mask = None
@@ -511,13 +503,9 @@ def mha_backward_kernel(
 
         span_k = start_k * block_k2 + jnp.arange(block_k2)
         # boolean mask for the current qk slice
+        qk = score_mod(qk, start_b, start_h, span_q, span_k)
         qk = jnp.where(
             mask_mod(start_b, start_h, span_q, span_k), qk, DEFAULT_MASK_VALUE
-        )
-        qk = jnp.where(
-            qk != DEFAULT_MASK_VALUE,
-            score_mod(qk, start_b, start_h, span_q, span_k),
-            DEFAULT_MASK_VALUE,
         )
 
         if causal or segment_ids_ref is not None:
