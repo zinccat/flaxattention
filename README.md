@@ -112,4 +112,4 @@ seq_len for query = 1,
 - FlaxAttention (Without Pallas Flash Attention): **0.00650s**
 - Jax Pallas Decoding Attention (no score_mod): 0.00998s
 
-We can see that pure JAX implementation is actually the fastest, surpassing Palllas Flash Attention. The kernel also supports arbitrary query length and the inflection point is around 64, where the Palllas Flash Attention starts to outperform the pure JAX implementation when the query length is greater than 64.
+We can see that pure JAX implementation is actually the fastest, surpassing Palllas Flash Attention. The kernel also supports arbitrary query length and the inflection point is around 64, where the Palllas Flash Attention starts to outperform the pure JAX implementation when the query length is greater than 64. (For autograd, the inflection point is around 1024, which is quite bad).
