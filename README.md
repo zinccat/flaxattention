@@ -104,3 +104,12 @@ Float16:
 | FlexAttention (Torch)| **0.11708855209872127**        | **0.5104729640297592**         |
 
 We can see that the forward performance is about 20% slower than the original implementation, while backward about 8% slower. There are still some optimizations to be done.
+
+Decoding (Float16):
+seq_len for query = 1,
+- FlexAttention: 0.0103s
+- FlaxAttention (This repo): 0.0145s
+- FlaxAttention (Without Pallas Flash Attention): **0.00650s**
+- Jax Pallas Decoding Attention (no score_mod): 0.00998s
+
+We can see that pure JAX implementation is actually the fastest, surpassing Palllas Flash Attention. The kernel also supports arbitrary query length and the inflection point is around 64, where the Palllas Flash Attention starts to outperform the pure JAX implementation when the query length is greater than 64.

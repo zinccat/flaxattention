@@ -45,16 +45,3 @@ if __name__ == "__main__":
     end = timer()
 
     print("Time taken for 100 iterations: ", end - start)
-
-    start = timer()
-    for _ in range(100):
-        output_torch = flex_attention(
-            query_torch,
-            key_torch,
-            value_torch,
-            score_mod=checkerboard_torch,
-        ).sum().backward()
-    torch.cuda.synchronize()
-    end = timer()
-
-    print("Time taken for 100 iterations backprop: ", end - start)

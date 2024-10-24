@@ -203,13 +203,14 @@ def mha(
     score_mod_grad: _score_mod_signature | None = None,
 ):
     del backward_pass_impl
-    batch_size, seq_len, num_heads, head_dim = q.shape
-    block_q = min(block_q, seq_len)
-    block_k = min(block_k, seq_len)
+    batch_size, seq_len_q, num_heads, head_dim = q.shape
+    seq_len_kv = k.shape[1]
+    block_q = min(block_q, seq_len_q)
+    block_k = min(block_k, seq_len_kv)
     # Heuristics.
     grid_ = grid
     if grid_ is None:
-        grid_ = (pl.cdiv(seq_len, block_q), batch_size, num_heads)  # seq, batch, head
+        grid_ = (pl.cdiv(seq_len_q, block_q), batch_size, num_heads)  # seq, batch, head
 
     num_warps_ = num_warps
     if num_warps_ is None:
@@ -229,13 +230,13 @@ def mha(
 
     in_specs = [
         pl.BlockSpec((None, block_q, None, head_dim), lambda i, j, k: (j, i, k, 0)),
-        pl.BlockSpec((None, seq_len, None, head_dim), lambda _, j, k: (j, 0, k, 0)),
-        pl.BlockSpec((None, seq_len, None, head_dim), lambda _, j, k: (j, 0, k, 0)),
+        pl.BlockSpec((None, seq_len_kv, None, head_dim), lambda _, j, k: (j, 0, k, 0)),
+        pl.BlockSpec((None, seq_len_kv, None, head_dim), lambda _, j, k: (j, 0, k, 0)),
     ]
     in_specs.append(
         None  # type: ignore[arg-type]
         if segment_ids is None
-        else pl.BlockSpec((None, seq_len), lambda _, j, k: (j, 0))
+        else pl.BlockSpec((None, seq_len_kv), lambda _, j, k: (j, 0))
     )
     out_shape = jax.ShapeDtypeStruct(shape=q.shape, dtype=q.dtype)
     return pl.pallas_call(

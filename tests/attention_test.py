@@ -6,7 +6,7 @@ from torch.nn.attention.flex_attention import flex_attention
 import numpy as np
 from absl.testing import absltest # pylint: disable=import-error
 
-from flaxattention import flax_attention
+from flaxattention import flax_attention, flax_attention_pallas
 from flaxattention.mods import generate_alibi_bias
 
 
@@ -53,6 +53,170 @@ class TestAttention(absltest.TestCase):
                 query_torch,
                 key_torch,
                 value_torch,
+            )
+            .detach()
+            .cpu()
+            .numpy()
+        )
+
+        np.testing.assert_almost_equal(output_jax, output_torch, decimal=2)
+
+    def test_pallas_equivalence_with_torch(self):
+        # Prepare inputs
+        batch_size = 4
+        num_heads = 8
+        seq_len_q = 64
+        seq_len_kv = 64
+        feature_size = 32
+
+        # Random tensors for query, key, and value
+        key = jax.random.normal(
+            jax.random.PRNGKey(0), (batch_size, num_heads, seq_len_kv, feature_size)
+        )
+        query = jax.random.normal(
+            jax.random.PRNGKey(1), (batch_size, num_heads, seq_len_q, feature_size)
+        )
+        value = jax.random.normal(
+            jax.random.PRNGKey(2), (batch_size, num_heads, seq_len_kv, feature_size)
+        )
+
+        output_jax = flax_attention_pallas(
+            query,
+            key,
+            value,
+        )
+
+        query_torch = jax2torch(query)
+        key_torch = jax2torch(key)
+        value_torch = jax2torch(value)
+
+        output_torch = (
+            flex_attention(
+                query_torch,
+                key_torch,
+                value_torch,
+            )
+            .detach()
+            .cpu()
+            .numpy()
+        )
+
+        np.testing.assert_almost_equal(output_jax, output_torch, decimal=2)
+    
+    def test_decoding_equivalence_with_torch(self):
+        # Prepare inputs
+        batch_size = 4
+        num_heads = 8
+        seq_len_q = 1
+        seq_len_kv = 64
+        feature_size = 32
+
+        # Random tensors for query, key, and value
+        key = jax.random.normal(
+            jax.random.PRNGKey(0), (batch_size, num_heads, seq_len_kv, feature_size)
+        )
+        query = jax.random.normal(
+            jax.random.PRNGKey(1), (batch_size, num_heads, seq_len_q, feature_size)
+        )
+        value = jax.random.normal(
+            jax.random.PRNGKey(2), (batch_size, num_heads, seq_len_kv, feature_size)
+        )
+
+        output_jax = flax_attention(
+            query,
+            key,
+            value,
+            score_mod=generate_alibi_bias(num_heads),
+        )
+
+        query_torch = jax2torch(query)
+        key_torch = jax2torch(key)
+        value_torch = jax2torch(value)
+
+        def generate_alibi_bias_torch(H: int):
+            """Returns an alibi bias score_mod given the number of heads H
+
+            Args:
+                H: number of heads
+
+            Returns:
+                alibi_bias: alibi bias score_mod
+            """
+
+            def alibi_mod(score, b, h, q_idx, kv_idx):
+                scale = torch.exp2(-((h + 1) * 8.0 / H))
+                bias = (q_idx - kv_idx) * scale
+                return score + bias
+
+            return alibi_mod
+
+        output_torch = (
+            flex_attention(
+                query_torch,
+                key_torch,
+                value_torch,
+                score_mod=generate_alibi_bias_torch(num_heads),
+            )
+            .detach()
+            .cpu()
+            .numpy()
+        )
+
+        np.testing.assert_almost_equal(output_jax, output_torch, decimal=2)
+
+    def test_pallas_decoding_equivalence_with_torch(self):
+        # Prepare inputs
+        batch_size = 4
+        num_heads = 8
+        seq_len_q = 1
+        seq_len_kv = 64
+        feature_size = 32
+
+        # Random tensors for query, key, and value
+        key = jax.random.normal(
+            jax.random.PRNGKey(0), (batch_size, num_heads, seq_len_kv, feature_size)
+        )
+        query = jax.random.normal(
+            jax.random.PRNGKey(1), (batch_size, num_heads, seq_len_q, feature_size)
+        )
+        value = jax.random.normal(
+            jax.random.PRNGKey(2), (batch_size, num_heads, seq_len_kv, feature_size)
+        )
+
+        output_jax = flax_attention_pallas(
+            query,
+            key,
+            value,
+            score_mod=generate_alibi_bias(num_heads),
+        )
+
+        query_torch = jax2torch(query)
+        key_torch = jax2torch(key)
+        value_torch = jax2torch(value)
+
+        def generate_alibi_bias_torch(H: int):
+            """Returns an alibi bias score_mod given the number of heads H
+
+            Args:
+                H: number of heads
+
+            Returns:
+                alibi_bias: alibi bias score_mod
+            """
+
+            def alibi_mod(score, b, h, q_idx, kv_idx):
+                scale = torch.exp2(-((h + 1) * 8.0 / H))
+                bias = (q_idx - kv_idx) * scale
+                return score + bias
+
+            return alibi_mod
+
+        output_torch = (
+            flex_attention(
+                query_torch,
+                key_torch,
+                value_torch,
+                score_mod=generate_alibi_bias_torch(num_heads),
             )
             .detach()
             .cpu()
