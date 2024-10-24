@@ -115,6 +115,8 @@ def mha_forward_kernel(
 
         m_curr = qk.max(axis=-1)
         m_next = jnp.maximum(m_prev, m_curr)
+        m_next = (m_next == DEFAULT_MASK_VALUE)
+        m_next = jnp.where(m_next, 0.0, m_next)
         correction = jnp.exp(m_prev - m_next)
         l_prev_corr = correction * l_prev
         s_curr = jnp.exp(
@@ -139,6 +141,7 @@ def mha_forward_kernel(
     # We keep an unscaled version of o during the scan over seq_len. Scaling it
     # by the last l_i gives us the correct final output. See section 3.1.1 in the
     # FlashAttention-2 paper: https://arxiv.org/pdf/2307.08691.
+    l_i = jnp.where(l_i == 0.0, 1, l_i)
     o /= l_i[:, None]
 
     if residual_refs:
