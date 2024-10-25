@@ -8,9 +8,9 @@ readme = "README.md"
 repository = "https://github.com/zinccat/flaxattention"
 homepage = "https://github.com/zinccat/flaxattention"
 
-[tool.poetry.dependencies]
-python = "^3.10"
-jax = "^0.4.34"
+# [tool.poetry.dependencies]
+# python = "^3.10"
+# jax = "^0.4.34"
 
 [tool.poetry.extras]
 viz = [
