@@ -116,7 +116,6 @@ seq_len for query = 1,
 We can see that pure JAX implementation is actually the fastest, surpassing Palllas Flash Attention. The kernel also supports arbitrary query length and the inflection point is around 64, where the Palllas Flash Attention starts to outperform the pure JAX implementation when the query length is greater than 64. (For autograd, the inflection point is around 1024, which is quite bad).
 
 ## Issues
-Ensure softmax safety in pure JAX implementation is costing ~15% performance.
 
 ## TODO
 - [ ] Implement the block sparse optimization
