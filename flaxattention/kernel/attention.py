@@ -68,6 +68,8 @@ def mha_forward_kernel(
         None if segment_ids_ref is None else pl.load(segment_ids_ref, (curr_q_slice,))
     )
 
+    RCP_LN2 = 1.44269504
+
     # In FlashAttention algorithm 1 there are 2 loops: slow over tiles of kv (size
     # (Bc == block_k here), and fast over blocks of q (size Br == block_q here).
     # Here we only loop over blocks of kv to process entire seq_len, the loop over
@@ -108,14 +110,14 @@ def mha_forward_kernel(
                 )
             # Apply mask to qk.
             qk = jnp.where(mask, qk, DEFAULT_MASK_VALUE)
-
+        qk *= RCP_LN2
         m_curr = qk.max(axis=-1)
         m_next = jnp.maximum(m_prev, m_curr)
         m_next = (m_next == DEFAULT_MASK_VALUE)
         m_next = jnp.where(m_next, 0.0, m_next)
-        correction = jnp.exp(m_prev - m_next)
+        correction = jnp.exp2(m_prev - m_next)
         l_prev_corr = correction * l_prev
-        s_curr = jnp.exp(
+        s_curr = jnp.exp2(
             qk - m_next[:, None]
         )  # Use m_next instead of m_curr to avoid a correction on l_curr
         l_curr = s_curr.sum(axis=-1)
@@ -142,7 +144,7 @@ def mha_forward_kernel(
 
     if residual_refs:
         lse_ref = residual_refs[0]
-        lse_ref[...] = m_i + jnp.log(l_i)
+        lse_ref[...] = m_i + jnp.log2(l_i)
     # Write output to dram.
     o_ref[...] = o.astype(o_ref.dtype)
 
@@ -416,6 +418,8 @@ def mha_backward_kernel(
         None if segment_ids_ref is None else pl.load(segment_ids_ref, (curr_k_slice,))
     )
 
+    RCP_LN2 = 1.44269504
+
     def inner_loop_dkdv(start_q, carry):
         dv, dk = carry
         curr_q_slice = pl.dslice(start_q * block_q1, block_q1)
@@ -444,10 +448,11 @@ def mha_backward_kernel(
                     causal_mask if mask is None else jnp.logical_and(mask, causal_mask)
                 )
             qk = jnp.where(mask, qk, DEFAULT_MASK_VALUE)
+        qk *= RCP_LN2
         lse = pl.load(lse_ref, (curr_q_slice,))
         di = pl.load(delta_ref, (curr_q_slice,))
         do = pl.load(do_scaled_ref, (curr_q_slice, slice(None)))
-        p = jnp.exp(qk - lse[:, None])  # softmax_scores
+        p = jnp.exp2(qk - lse[:, None])  # softmax_scores
         dv = dv + pl.dot(p.astype(do.dtype).T, do)
         dp = jnp.zeros((block_q1, block_k1), dtype=jnp.float32) - di[:, None]
         dp = dp + pl.dot(do, v.T)
@@ -521,8 +526,8 @@ def mha_backward_kernel(
                     causal_mask if mask is None else jnp.logical_and(mask, causal_mask)
                 )
             qk = jnp.where(mask, qk, DEFAULT_MASK_VALUE)
-
-        p = jnp.exp(qk - lse[:, None])
+        qk *= RCP_LN2
+        p = jnp.exp2(qk - lse[:, None])
         dp = jnp.zeros((block_q2, block_k2), dtype=jnp.float32) - di[:, None]
         dp = dp + pl.dot(do, v.T)
         ds = p * dp
