@@ -11,6 +11,7 @@ from .common import (
     _ModificationType,
     _get_mod_type,
     _vmap_for_bhqkv,
+    _vmap_for_qkv
 )
 
 _DEFAULT_SPARSE_BLOCK_SIZE = 128
@@ -186,7 +187,90 @@ class BlockMask:
             *block_size,
             self.mask_mod,
         )
+    
+    def __str__(self):
+        s = f"BlockMask(shape={self.shape}, sparsity={self.sparsity():.2f}%, \n"
+        mask_str = self.to_string().strip()
+        s += mask_str
+        s += "\n)"
+        return s
 
+    def __getitem__(self, index) -> "BlockMask":
+        """
+        Returns a new BlockMask instance by getting the mask for the given index position.
+
+        Args:
+            index: Index to apply to all attributes.
+
+        Example Usage:
+            .. code-block:: python
+
+                def causal_mask(b, h, q_idx, kv_idx):
+                    return q_idx >= kv_idx
+
+                block_mask = create_block_mask(causal_mask, 4, 2, 512, 512, device="cuda")
+                assert block_mask.kv_num_blocks.shape == (4,2,4)
+                assert block_mask.kv_indices.shape == (4,2,4,4)
+
+                # Index on batch dimension
+                new_block_mask = block_mask[0]
+                assert new_block_mask.kv_num_blocks.shape == (2,4)
+                assert new_block_mask.kv_indices.shape == (2,4,4)
+
+                # Index on batch and head dimension
+                new_block_mask = block_mask[0, 1]
+                assert new_block_mask.kv_num_blocks.shape == (4,)
+                assert new_block_mask.kv_indices.shape == (4,4)
+
+                # slicing on batch and head dimension
+                new_block_mask = block_mask[0:2, 1:2]
+                assert new_block_mask.kv_num_blocks.shape == (2,1,4)
+                assert new_block_mask.kv_indices.shape == (2,1,4,4)
+
+                # slicing on batch, head, and query dimension
+                new_block_mask = block_mask[0:2, 1:2, torch.tensor([1], dtype=torch.int32)]
+                assert new_block_mask.kv_num_blocks.shape == (2,1,1)
+                assert new_block_mask.kv_indices.shape == (2,1,1,4)
+        """
+        new_kv_num_blocks = self.kv_num_blocks[index]
+        new_kv_indices = self.kv_indices[index]
+        if self.full_kv_num_blocks is not None:
+            assert self.full_kv_indices is not None
+            new_full_kv_num_blocks = self.full_kv_num_blocks[index]
+            new_full_kv_indices = self.full_kv_indices[index]
+        else:
+            new_full_kv_num_blocks = None
+            new_full_kv_indices = None
+        return BlockMask.from_kv_blocks(
+            new_kv_num_blocks,
+            new_kv_indices,
+            new_full_kv_num_blocks,
+            new_full_kv_indices,
+            BLOCK_SIZE=self.BLOCK_SIZE,
+            mask_mod=None,
+        )
+
+    def __repr__(self):
+        def shape_or_none(x: Optional[Array]):
+            return x.shape if x is not None else None
+
+        return (
+            f"BlockMask(\n"
+            f"    kv_num_blocks={self.kv_num_blocks.shape},\n"
+            f"    kv_indices={self.kv_indices.shape},\n"
+            f"    full_kv_num_blocks={shape_or_none(self.full_kv_num_blocks )},\n"
+            f"    full_kv_indices={shape_or_none(self.full_kv_indices)},\n"
+            f"    q_num_blocks={shape_or_none(self.q_num_blocks)},\n"
+            f"    q_indices={shape_or_none(self.q_indices)},\n"
+            f"    full_q_num_blocks={shape_or_none(self.full_q_num_blocks)},\n"
+            f"    full_q_indices={shape_or_none(self.full_q_indices)},\n"
+            f"    BLOCK_SIZE={self.BLOCK_SIZE},\n"
+            f"    shape={self.shape},\n"
+            f"    sparsity={self.sparsity():.2f}%,\n"
+            f"    mask_mod={self.mask_mod.__name__ if hasattr(self.mask_mod, '__name__') else self.mask_mod}\n"
+            f")"
+        )
+    
     @property
     def shape(self):
         """Returns the shape of the mask."""
@@ -214,27 +298,16 @@ class BlockMask:
         computed_size = computed_blocks.item() * self.BLOCK_SIZE[0] * self.BLOCK_SIZE[1]
         dense_ratio = computed_size / total_size
         return 100 * (1 - dense_ratio)
-
-    def __repr__(self):
-        def shape_or_none(x: Optional[Array]):
-            return x.shape if x is not None else None
-
-        return (
-            f"BlockMask(\n"
-            f"    kv_num_blocks={self.kv_num_blocks.shape},\n"
-            f"    kv_indices={self.kv_indices.shape},\n"
-            f"    full_kv_num_blocks={shape_or_none(self.full_kv_num_blocks )},\n"
-            f"    full_kv_indices={shape_or_none(self.full_kv_indices)},\n"
-            f"    q_num_blocks={shape_or_none(self.q_num_blocks)},\n"
-            f"    q_indices={shape_or_none(self.q_indices)},\n"
-            f"    full_q_num_blocks={shape_or_none(self.full_q_num_blocks)},\n"
-            f"    full_q_indices={shape_or_none(self.full_q_indices)},\n"
-            f"    BLOCK_SIZE={self.BLOCK_SIZE},\n"
-            f"    shape={self.shape},\n"
-            f"    sparsity={self.sparsity():.2f}%,\n"
-            f"    mask_mod={self.mask_mod.__name__ if hasattr(self.mask_mod, '__name__') else self.mask_mod}\n"
-            f")"
-        )
+    
+    def to_dense(self) -> Array:
+        """Returns a dense block that is equivalent to the block mask."""
+        partial_dense = _ordered_to_dense(self.kv_num_blocks, self.kv_indices)
+        if self.full_kv_num_blocks is not None:
+            assert self.full_kv_indices is not None
+            return partial_dense | _ordered_to_dense(
+                self.full_kv_num_blocks, self.full_kv_indices
+            )
+        return partial_dense
 
 
 def _create_empty_block_mask(query: Array, key: Array) -> BlockMask:

@@ -27,6 +27,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from flaxattention.core.common import _score_mod_signature, _mask_mod_signature
+from flaxattention.core.blockmask import BlockMask
 
 DEFAULT_MASK_VALUE = -0.7 * float(np.finfo(np.dtype("float32")).max)
 
@@ -45,12 +46,14 @@ def mha_forward_kernel(
     block_d: int,
     block_k: int,
     score_mod: _score_mod_signature | None = None,
-    mask_mod: _mask_mod_signature | None = None,
+    block_mask: tuple
 ):
     seq_len = k_ref.shape[0]
     start_q = pl.program_id(0)
     start_b = pl.program_id(1)
     start_h = pl.program_id(2)
+
+    mask_mod = block_mask[-1]
 
     # o is the buffer where we accumulate the output on sram.
     # m_i and l_i (see FlashAttention paper) are updated during the k,v loop.
@@ -139,7 +142,7 @@ def mha_forward_kernel(
     # We keep an unscaled version of o during the scan over seq_len. Scaling it
     # by the last l_i gives us the correct final output. See section 3.1.1 in the
     # FlashAttention-2 paper: https://arxiv.org/pdf/2307.08691.
-    l_i = jnp.where(l_i == 0.0, 1, l_i)
+    l_i = jnp.where(l_i == 0.0, 1.0, l_i) # account for the rows where all values are masked
     o /= l_i[:, None]
 
     if residual_refs:
@@ -180,7 +183,7 @@ def segment_mask(
         "interpret",
         "debug",
         "score_mod",
-        "mask_mod",
+        "block_mask",
         "score_mod_grad",
     ],
 )
@@ -200,10 +203,13 @@ def mha(
     interpret: bool = False,
     debug: bool = False,
     score_mod: _score_mod_signature | None = None,
-    mask_mod: _mask_mod_signature | None = None,
+    block_mask: BlockMask | None = None,
     score_mod_grad: _score_mod_signature | None = None,
 ):
     del backward_pass_impl
+
+    block_mask = block_mask.as_tuple()
+
     batch_size, q_seq_len, num_heads, head_dim = q.shape
     kv_seq_len = k.shape[1]
     block_q = min(block_q, q_seq_len)
@@ -226,7 +232,7 @@ def mha(
         block_d=head_dim,
         causal=causal,
         score_mod=score_mod,
-        mask_mod=mask_mod,
+        block_mask=block_mask,
     )
 
     in_specs = [
@@ -273,10 +279,13 @@ def _mha_forward(
     interpret: bool,
     debug: bool,
     score_mod: _score_mod_signature | None,
-    mask_mod: _mask_mod_signature | None,
+    block_mask: BlockMask | None,
     score_mod_grad: _score_mod_signature | None,
 ):
     del backward_pass_impl, score_mod_grad
+
+    block_mask = block_mask.as_tuple()
+
     batch_size, q_seq_len, num_heads, head_dim = q.shape
     kv_seq_len = k.shape[1]
     block_q = min(block_q, q_seq_len)
@@ -299,7 +308,7 @@ def _mha_forward(
         block_k=block_k,
         block_d=head_dim,
         score_mod=score_mod,
-        mask_mod=mask_mod,
+        block_mask=block_mask,
     )
     out_shape = [
         jax.ShapeDtypeStruct(shape=q.shape, dtype=q.dtype),  # out
@@ -392,10 +401,12 @@ def mha_backward_kernel(
     block_k2: int,
     block_d: int,
     score_mod: _score_mod_signature | None = None,
-    mask_mod: _mask_mod_signature | None = None,
+    block_mask: BlockMask | None = None,
     score_mod_grad: _score_mod_signature | None = None,
 ):
     del out_ref  # Not needed
+    mask_mod = block_mask[-1]
+
     q_seq_len = q_ref.shape[0]
     kv_seq_len = k_ref.shape[0]
 
@@ -565,13 +576,15 @@ def _mha_backward(
     interpret: bool,
     debug: bool,
     score_mod: _score_mod_signature | None,
-    mask_mod: _mask_mod_signature | None,
+    block_mask: BlockMask | None,
     score_mod_grad: _score_mod_signature | None,
     res,
     do,
 ):
     del num_warps, num_stages, grid
     q, k, v, segment_ids, out, lse = res
+
+    block_mask = block_mask.as_tuple()
 
     if backward_pass_impl == "xla":
         return jax.vjp(
@@ -620,7 +633,7 @@ def _mha_backward(
                 block_k2=block_k,
                 block_d=head_dim,
                 score_mod=score_mod,
-                mask_mod=mask_mod,
+                block_mask=block_mask,
                 score_mod_grad=score_mod_grad,
             ),
             out_shape=out_shapes,

@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, Tuple, Optional, Union
 from jax import Array
 from functools import partial
 
-from .common import _score_mod_signature, _vmap_for_bhqkv, _mask_mod_signature
+from .common import _score_mod_signature, _mask_mod_signature, _vmap_for_bhqkv, _vmap_for_qkv
 from .blockmask import _create_empty_block_mask, BlockMask
 from ..kernel.attention import mha as mha_pallas
 
@@ -221,7 +221,7 @@ def flax_attention(
     jax.jit,
     static_argnames=(
         "score_mod",
-        "mask_mod",
+        "block_mask",
         "block_q",
         "block_k",
         "enable_gqa",
@@ -233,7 +233,7 @@ def flax_attention_pallas(
     key: Array,
     value: Array,
     score_mod: _score_mod_signature | None = None,
-    mask_mod: _mask_mod_signature | None = None,
+    block_mask: BlockMask | None = None,
     block_q: int = 64,
     block_k: int = 64,
     sm_scale: float | None = None,
@@ -274,26 +274,32 @@ def flax_attention_pallas(
 
     if score_mod is None:
         score_mod = _identity
-    if mask_mod is None:
-        mask_mod = _create_empty_block_mask(query, key).as_tuple()[-1]
+    if block_mask is None:
+        block_mask = _create_empty_block_mask(query, key)
+    score_mod_grad = jax.grad(score_mod)
+    score_mod = _vmap_for_qkv(
+        score_mod,
+        prefix=(0,),  # The first argument (score) is mapped over batch dimension
+        suffix=(),
+        out_axes=0,
+        group_dim=False,
+    )
 
-    if score_mod or mask_mod:
-        dimensions = [
-            (None, None, None, 0),  # Map over kv_idx
-            (None, None, 0, None),  # Map over q_idx
-        ]
-        if score_mod is not None:
-            score_mod_grad = jax.grad(score_mod) if score_mod is not None else None
-            prefix = (0,)
-            for dims in dimensions:
-                in_axes = prefix + dims
-                score_mod = jax.vmap(score_mod, in_axes=in_axes, out_axes=0)
-                score_mod_grad = jax.vmap(score_mod_grad, in_axes=in_axes, out_axes=0)
-        if mask_mod is not None:
-            prefix = ()
-            for dims in dimensions:
-                in_axes = prefix + dims
-                mask_mod = jax.vmap(mask_mod, in_axes=in_axes, out_axes=0)
+    score_mod_grad = _vmap_for_qkv(
+        score_mod_grad,
+        prefix=(0,),  # The first argument (score) is mapped over batch dimension
+        suffix=(),
+        out_axes=0,
+        group_dim=False,
+    )
+
+    block_mask.mask_mod = _vmap_for_qkv(
+        block_mask.mask_mod,
+        prefix=(),
+        suffix=(),
+        out_axes=0,
+        group_dim=False,
+    )
 
     output = mha_pallas(
         q=query,
@@ -304,7 +310,7 @@ def flax_attention_pallas(
         block_q=block_q,
         block_k=block_k,
         score_mod=score_mod,
-        mask_mod=mask_mod,
+        block_mask=block_mask,
         score_mod_grad=score_mod_grad if score_mod is not None else None,
     )
     if l_q < 16:
