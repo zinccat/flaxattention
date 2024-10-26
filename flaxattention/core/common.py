@@ -79,3 +79,35 @@ def _vmap_for_bhqkv(
         in_axes = prefix + dims + suffix
         fn = jax.vmap(fn, in_axes=in_axes, out_axes=out_axes)
     return fn
+
+def _vmap_for_qkv(
+    fn: Callable,
+    prefix: Tuple[Optional[int], ...],
+    suffix: Tuple[Optional[int], ...] = (),
+    out_axes: Union[int, Tuple[Optional[int], ...]] = 0,
+    group_dim: bool = False,
+) -> Callable:
+    """
+    Used to vmap both score_mods and mask_mods over 4-dimensional/5-dimensional inputs.
+    Mapping over the [b, hq, q_idx, kv_idx] or [b, hkv, g, q_idx, kv_idx] dimensions.
+
+    Args:
+        fn (Callable): The function to vmap.
+        prefix (Tuple): The prefix of the vmap. For score_mod functions, this should be set to (0,). For mask_mods, use ().
+        suffix (Tuple): Additional None entries for other buffers or arguments.
+        out_axes (Union[int, Tuple[Optional[int], ...]]): The output axes for the vmapped function.
+        group_dim (bool): Whether to include the group dimension.
+
+    Returns:
+        Callable: The vmapped function.
+    """
+    dimensions: List[Tuple[None | int, None | int, None | int, None | int]] = []
+    dimensions = [
+        (None, None, None, 0),  # Map over kv_idx
+        (None, None, 0, None),  # Map over q_idx
+    ]
+
+    for dims in dimensions:
+        in_axes = prefix + dims + suffix
+        fn = jax.vmap(fn, in_axes=in_axes, out_axes=out_axes)
+    return fn
