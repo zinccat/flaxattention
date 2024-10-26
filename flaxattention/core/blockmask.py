@@ -128,7 +128,6 @@ class BlockMask:
         full_kv_indices: Optional[Array] = None,
         BLOCK_SIZE: Union[int, Tuple[int, int]] = _DEFAULT_SPARSE_BLOCK_SIZE,
         mask_mod: Optional[_mask_mod_signature] = None,
-        pallas: bool = False,
     ):
         if kv_indices.ndim < 2:
             raise RuntimeError("BlockMask must have at least 2 dimensions")
@@ -151,9 +150,6 @@ class BlockMask:
             BLOCK_SIZE = (BLOCK_SIZE, BLOCK_SIZE)
 
         mask_mod = mask_mod if mask_mod is not None else noop_mask
-
-        if pallas:
-            mask_mod = _vmap_for_qkv(mask_mod, prefix=())
 
         return cls(
             kv_num_blocks=kv_num_blocks,
@@ -314,7 +310,7 @@ class BlockMask:
         return partial_dense
 
 
-def _create_empty_block_mask(query: Array, key: Array, pallas: bool=False) -> BlockMask:
+def _create_empty_block_mask(query: Array, key: Array) -> BlockMask:
     r"""Default block mask for flex attention.
     If users don't specify any block sparse mask info, we create this
     empty block sparse mask. Which creates a BlockMask with 1 block that is the full length
@@ -324,7 +320,6 @@ def _create_empty_block_mask(query: Array, key: Array, pallas: bool=False) -> Bl
         kv_num_blocks=jnp.ones([1, 1, 1], dtype=jnp.int32),
         kv_indices=jnp.zeros([1, 1, 1, 1], dtype=jnp.int32),
         BLOCK_SIZE=_LARGE_SPARSE_BLOCK_SIZE,
-        pallas=pallas,
     )
 
 

@@ -275,7 +275,7 @@ def flax_attention_pallas(
     if score_mod is None:
         score_mod = _identity
     if block_mask is None:
-        block_mask = _create_empty_block_mask(query, key, pallas=True)
+        block_mask = _create_empty_block_mask(query, key)
     score_mod_grad = jax.grad(score_mod)
     score_mod = _vmap_for_qkv(
         score_mod,
@@ -288,6 +288,14 @@ def flax_attention_pallas(
     score_mod_grad = _vmap_for_qkv(
         score_mod_grad,
         prefix=(0,),  # The first argument (score) is mapped over batch dimension
+        suffix=(),
+        out_axes=0,
+        group_dim=False,
+    )
+
+    block_mask.mask_mod = _vmap_for_qkv(
+        block_mask.mask_mod,
+        prefix=(),
         suffix=(),
         out_axes=0,
         group_dim=False,
